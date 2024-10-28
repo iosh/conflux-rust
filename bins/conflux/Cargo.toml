@@ -85,10 +85,6 @@ name = "pos-genesis-tool"
 path = "../pos-genesis-tool/main.rs"
 
 [features]
-default = ["jemalloc-global", "bls-blst"]
 deadlock-detection = ["parking_lot/deadlock_detection"]
 jemalloc-global = ["jemallocator", "malloc_size_of/jemalloc-global"]
-bls-blst = ["cfxcore/bls-blst", "diem-crypto/bls-blst"]
-bls-pairing = ["cfxcore/bls-pairing", "diem-crypto/bls-pairing"]
-blst-portable = ["cfxcore/blst-portable", "diem-crypto/blst-portable"]
 u64-mpt-db-key = ["client/u64_mpt_db_key"]
