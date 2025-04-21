@@ -1432,7 +1432,7 @@ dependencies = [
 
 [[package]]
 name = "cfx-rpc-common-impl"
-version = "2.4.0"
+version = "2.5.0-testnet"
 dependencies = [
  "cfx-addr",
  "cfx-execute-helper",
@@ -1477,7 +1477,7 @@ dependencies = [
 
 [[package]]
 name = "cfx-rpc-middlewares"
-version = "2.4.0"
+version = "2.5.0-testnet"
 dependencies = [
  "anyhow",
  "cfx-rpc-utils",
@@ -1598,7 +1598,7 @@ dependencies = [
 
 [[package]]
 name = "cfx-tasks"
-version = "2.4.0"
+version = "2.5.0-testnet"
 dependencies = [
  "auto_impl",
  "dyn-clone",
