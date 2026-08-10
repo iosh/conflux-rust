@@ -6,10 +6,14 @@ name = "cfx-db-errors"
 version = "2.0.2"
 edition = "2021"
 
+[features]
+default = ["sqlite"]
+sqlite = ["dep:sqlite"]
+
 [dependencies]
 primitives = { workspace = true }
 cfx-types = { workspace = true }
 rlp = { workspace = true }
-sqlite = { workspace = true }
+sqlite = { workspace = true, optional = true }
 strfmt = { workspace = true }
-thiserror ={ workspace = true }
+thiserror = { workspace = true }

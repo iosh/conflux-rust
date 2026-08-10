@@ -154,7 +154,7 @@ txgen = { path = "./crates/transactiongen" }
 blockgen = { path = "./crates/blockgen" }
 serde-utils = { path = "./crates/util/serde_utils" }
 db = { path = "./crates/dbs/db" }
-cfx-db-errors = { path = "./crates/dbs/db-errors" }
+cfx-db-errors = { path = "./crates/dbs/db-errors", default-features = false }
 cfx-statedb = { path = "./crates/dbs/statedb" }
 cfx-storage = { path = "./crates/dbs/storage" }
 kvdb-rocksdb = { path = "./crates/dbs/kvdb-rocksdb" }

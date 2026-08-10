@@ -24,6 +24,7 @@ pub enum Error {
     #[error(transparent)]
     RlpDecodeError(#[from] rlp::DecoderError),
 
+    #[cfg(feature = "sqlite")]
     #[error(transparent)]
     SqliteError(#[from] sqlite::Error),
 
