@@ -4,7 +4,9 @@ use std::{
 };
 
 use cfx_internal_common::StateRootWithAuxInfo;
-use cfx_storage::{state::StateTrait as StorageTrait, Error, Result};
+use cfx_storage_types::{
+    Error, MptKeyValue, Result, StateTrait as StorageTrait,
+};
 use cfx_types::H256;
 use primitives::StorageKeyWithSpace;
 use tiny_keccak::{Hasher, Keccak};
@@ -57,7 +59,7 @@ impl StorageTrait for InmemoryStorage {
 
     fn delete_all(
         &mut self, access_key_prefix: StorageKeyWithSpace,
-    ) -> Result<Option<Vec<cfx_storage::MptKeyValue>>> {
+    ) -> Result<Option<Vec<MptKeyValue>>> {
         let prefix = access_key_prefix.to_key_bytes();
         let deleted = extract_prefix(&mut self.inner, &prefix);
         if deleted.is_empty() {
@@ -69,7 +71,7 @@ impl StorageTrait for InmemoryStorage {
 
     fn read_all(
         &mut self, access_key_prefix: StorageKeyWithSpace,
-    ) -> Result<Option<Vec<cfx_storage::MptKeyValue>>> {
+    ) -> Result<Option<Vec<MptKeyValue>>> {
         let kvs = read_prefix(&self.inner, &access_key_prefix.to_key_bytes());
         Ok(if kvs.is_empty() { None } else { Some(kvs) })
     }

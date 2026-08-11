@@ -4,8 +4,8 @@
 
 use super::StateDbGeneric;
 use cfx_internal_common::StateRootWithAuxInfo;
-use cfx_storage::{
-    utils::access_mode, Error, MptKeyValue, Result, StorageStateTrait,
+use cfx_storage_types::{
+    access_mode, Error, MptKeyValue, Result, StateTrait as StorageStateTrait,
 };
 use parking_lot::Mutex;
 use primitives::{EpochId, StorageKey, StorageKeyWithSpace, MERKLE_NULL_NODE};

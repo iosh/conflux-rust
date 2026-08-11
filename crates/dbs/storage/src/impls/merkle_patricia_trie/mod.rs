@@ -29,7 +29,7 @@ pub use self::{
     trie_proof::TrieProof,
 };
 
-pub type MptKeyValue = (Vec<u8>, Box<[u8]>);
+pub use cfx_storage_types::MptKeyValue;
 
 /// Classes implement KVInserter is used to store key-values in MPT iteration.
 pub trait KVInserter<Value> {

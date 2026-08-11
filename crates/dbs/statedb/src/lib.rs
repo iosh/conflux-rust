@@ -24,7 +24,7 @@ pub use self::{
     impls::StateDb as StateDbGeneric,
     statedb_ext::StateDbExt,
 };
-pub use cfx_storage::utils::access_mode;
+pub use cfx_storage_types::access_mode;
 pub type StateDb = StateDbGeneric;
 
 // Put StateDb in mod to make sure that methods from statedb_ext don't access
@@ -542,9 +542,9 @@ mod impls {
         debug::{ComputeEpochDebugRecord, StateOp},
         StateRootWithAuxInfo,
     };
-    use cfx_storage::{
-        utils::{access_mode, to_key_prefix_iter_upper_bound},
-        MptKeyValue, StorageStateTrait,
+    use cfx_storage_types::{
+        access_mode, to_key_prefix_iter_upper_bound, MptKeyValue,
+        StateTrait as StorageStateTrait,
     };
     use cfx_types::{
         address_util::AddressUtil, Address, AddressWithSpace, Space,
