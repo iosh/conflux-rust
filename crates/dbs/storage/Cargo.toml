@@ -11,6 +11,7 @@ cfg-if = { workspace = true }
 cfx-db-errors = { workspace = true, features = ["sqlite"] }
 cfx-internal-common = { workspace = true }
 cfx-storage-types = { workspace = true }
+cfx-mpt = { workspace = true }
 cfx-types = { workspace = true }
 delegate = "0.5.0"
 derive_more = { workspace = true }

@@ -2,6 +2,7 @@
 // Conflux is free software and distributed under GNU General Public License.
 // See http://www.gnu.org/licenses/
 
+#[macro_export]
 macro_rules! make_parallel_field_maybe_in_place_byte_array_memory_manager {
     (
         $accessor_type:tt$(<$($generics:tt),+>$( where <$($constrain_item:tt: $constrain:tt),*>)?)?,

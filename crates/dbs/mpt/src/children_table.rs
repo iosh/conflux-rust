@@ -909,9 +909,9 @@ impl<NodeRefT: NodeRefTrait> Decodable for ChildrenTable<NodeRefT> {
     }
 }
 
-use super::{
-    super::super::utils::WrappedCreateFrom,
+use crate::{
     merkle::{ChildrenMerkleTable, MaybeMerkleTable},
+    WrappedCreateFrom,
 };
 use malloc_size_of::{MallocSizeOf, MallocSizeOfOps};
 use malloc_size_of_derive::MallocSizeOf as MallocSizeOfDerive;

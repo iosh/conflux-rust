@@ -631,7 +631,6 @@ impl<CacheAlgoDataT: CacheAlgoDataTrait> Debug
 
 use super::{
     super::{
-        super::utils::WrappedCreateFrom,
         errors::*,
         merkle_patricia_trie::{maybe_in_place_byte_array::*, walk::*},
     },
@@ -639,6 +638,10 @@ use super::{
     node_ref::*,
     slab::*,
     *,
+};
+use cfx_mpt::{
+    make_parallel_field_maybe_in_place_byte_array_memory_manager,
+    WrappedCreateFrom,
 };
 use malloc_size_of::{MallocSizeOf, MallocSizeOfOps};
 use primitives::{MerkleHash, MptValue};

@@ -2,10 +2,8 @@
 // Conflux is free software and distributed under GNU General Public License.
 // See http://www.gnu.org/licenses/
 
-use super::{
-    super::super::utils::access_mode, compressed_path::*,
-    trie_node::TrieNodeTrait,
-};
+use crate::{compressed_path::*, trie_node::TrieNodeTrait};
+use cfx_storage_types::access_mode;
 use std::cmp::min;
 
 /// Key length should be multiple of 8.
@@ -91,7 +89,7 @@ pub trait TrieNodeWalkTrait<'node>:
 /// The start of key is always aligned with compressed path of
 /// current node, e.g. if compressed path starts at the second-half, so
 /// should be key.
-pub(super) fn walk<
+pub fn walk<
     'key,
     'node,
     AM: access_mode::AccessMode,

@@ -265,21 +265,9 @@ impl<T> EntryTrait for Entry<T> {
     }
 }
 
-impl<E: EntryTrait> WrappedCreateFrom<E::EntryType, E> for E {
-    fn take(val: E::EntryType) -> E { E::from_value(val) }
+impl<T> WrappedCreateFrom<T, Entry<T>> for Entry<T> {
+    fn take(val: T) -> Self { Self::from_value(val) }
 }
-
-// TODO: Check future rust compiler support. It's quite unfortunate that the
-// TODO: current rust compiler think that the commented out code conflict with
-// TODO: the one above. We implemented UnsafeCell EntryTrait in
-// TODO: super::merkle_patricia_trie.
-/*
-impl<'x, E: EntryTrait> WrappedCreateFrom<&'x E::EntryType, E> for E where E::EntryType : Clone {
-    fn take(val: &'x E::EntryType) -> E {
-        E::from_value(val.clone())
-    }
-}
-*/
 
 impl<'x, T: Clone> WrappedCreateFrom<&'x T, Entry<T>> for Entry<T> {
     fn take(val: &'x T) -> Self { Entry::Occupied(val.clone()) }

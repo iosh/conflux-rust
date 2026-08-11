@@ -2,31 +2,17 @@
 // Conflux is free software and distributed under GNU General Public License.
 // See http://www.gnu.org/licenses/
 
-#[macro_use]
-pub(super) mod maybe_in_place_byte_array_macro;
-
-pub mod children_table;
-pub(super) mod compressed_path;
-pub(super) mod maybe_in_place_byte_array;
-pub mod merkle;
 pub mod mpt_cursor;
 pub mod mpt_merger;
 pub mod simple_mpt;
-pub mod trie_node;
-pub mod trie_proof;
-pub(super) mod walk;
 
-#[cfg(test)]
-mod tests;
+pub use cfx_mpt::{children_table, merkle, trie_node, trie_proof};
+pub(super) use cfx_mpt::{compressed_path, maybe_in_place_byte_array, walk};
 
-pub use self::{
-    children_table::*,
-    compressed_path::{
-        CompressedPathRaw, CompressedPathRef, CompressedPathTrait,
-    },
-    mpt_merger::MptMerger,
-    trie_node::{TrieNodeTrait, VanillaTrieNode},
-    trie_proof::TrieProof,
+pub use self::mpt_merger::MptMerger;
+pub use cfx_mpt::{
+    children_table::*, CompressedPathRaw, CompressedPathRef,
+    CompressedPathTrait, TrieNodeTrait, TrieProof, VanillaTrieNode,
 };
 
 pub use cfx_storage_types::MptKeyValue;

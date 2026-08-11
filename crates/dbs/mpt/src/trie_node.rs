@@ -441,12 +441,12 @@ where ChildrenTableItem<NodeRefT>: DefaultChildrenItem<NodeRefT>
     }
 }
 
-use super::{
-    super::super::utils::WrappedCreateFrom,
+use crate::{
     children_table::*,
     compressed_path::*,
     merkle::{compute_merkle, compute_node_merkle, MaybeMerkleTableRef},
     walk::*,
+    WrappedCreateFrom,
 };
 use primitives::{MerkleHash, MptValue, MERKLE_NULL_NODE};
 use rlp::*;

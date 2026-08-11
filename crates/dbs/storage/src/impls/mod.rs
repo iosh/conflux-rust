@@ -2,9 +2,8 @@
 // Conflux is free software and distributed under GNU General Public License.
 // See http://www.gnu.org/licenses/
 
-#[macro_use]
-pub(super) mod merkle_patricia_trie;
 pub(super) mod delta_mpt;
+pub(super) mod merkle_patricia_trie;
 pub(super) mod node_merkle_proof;
 pub(super) mod proof_merger;
 pub(super) mod recording_storage;

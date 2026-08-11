@@ -20,6 +20,7 @@ members = [
     "crates/dbs/kvdb-rocksdb",
     "crates/dbs/db-errors",
     "crates/dbs/storage-types",
+    "crates/dbs/mpt",
     "crates/network",
     "crates/primitives",
     "crates/secret_store",
@@ -157,6 +158,7 @@ serde-utils = { path = "./crates/util/serde_utils" }
 db = { path = "./crates/dbs/db" }
 cfx-db-errors = { path = "./crates/dbs/db-errors", default-features = false }
 cfx-storage-types = { path = "./crates/dbs/storage-types" }
+cfx-mpt = { path = "./crates/dbs/mpt" }
 cfx-statedb = { path = "./crates/dbs/statedb" }
 cfx-storage = { path = "./crates/dbs/storage" }
 kvdb-rocksdb = { path = "./crates/dbs/kvdb-rocksdb" }

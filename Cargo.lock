@@ -1780,6 +1780,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "cfx-mpt"
+version = "1.0.0"
+dependencies = [
+ "cfx-db-errors",
+ "cfx-storage-types",
+ "cfx-types",
+ "keccak-hash",
+ "malloc_size_of",
+ "malloc_size_of_derive",
+ "memoffset",
+ "primitives",
+ "rlp 0.6.1",
+ "rustc-hex",
+ "serde",
+]
+
+[[package]]
 name = "cfx-packing-pool"
 version = "0.1.0"
 dependencies = [
@@ -2112,6 +2129,7 @@ dependencies = [
  "cfg-if 1.0.0",
  "cfx-db-errors",
  "cfx-internal-common",
+ "cfx-mpt",
  "cfx-storage-types",
  "cfx-types",
  "cfx-util-macros",

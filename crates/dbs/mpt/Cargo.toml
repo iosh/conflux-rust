@@ -1,0 +1,20 @@
+[package]
+description = "Conflux Merkle Patricia Trie data structures and algorithms"
+homepage = "https://www.confluxnetwork.org"
+license = "GPL-3.0"
+name = "cfx-mpt"
+version = "1.0.0"
+edition = "2021"
+
+[dependencies]
+cfx-db-errors = { workspace = true }
+cfx-storage-types = { workspace = true }
+cfx-types = { workspace = true }
+keccak-hash = { workspace = true }
+malloc_size_of = { workspace = true }
+malloc_size_of_derive = { workspace = true }
+memoffset = { workspace = true }
+primitives = { workspace = true }
+rlp = { workspace = true }
+rustc-hex = { workspace = true }
+serde = { workspace = true, features = ["rc"] }

@@ -121,6 +121,11 @@ pub fn compute_merkle(
     path_merkle
 }
 
-use super::*;
+use crate::{
+    children_table::CHILDREN_COUNT,
+    compressed_path::{
+        CompressedPathRaw, CompressedPathRef, CompressedPathTrait,
+    },
+};
 use keccak_hash::keccak;
 use primitives::{MerkleHash, MERKLE_NULL_NODE};

@@ -70,7 +70,7 @@ impl TrieProof {
         for (node_index, node) in nodes.iter().enumerate() {
             if !connected_child_parent_map.contains_key(node.get_merkle()) {
                 // Not connected.
-                bail!(Error::InvalidTrieProof);
+                return Err(Error::InvalidTrieProof);
             }
             for (child_index, child_merkle) in
                 node.get_children_table_ref().iter()
@@ -410,17 +410,14 @@ impl DerefMut for TrieProofNode {
 }
 
 use crate::{
-    impls::{
-        errors::*,
-        merkle_patricia_trie::{
-            merkle::compute_merkle,
-            walk::{TrieNodeWalkTrait, WalkStop},
-            CompressedPathRaw, CompressedPathTrait, TrieNodeTrait,
-            VanillaChildrenTable, VanillaTrieNode, CHILDREN_COUNT,
-        },
-    },
-    utils::access_mode,
+    children_table::{VanillaChildrenTable, CHILDREN_COUNT},
+    compressed_path::{CompressedPathRaw, CompressedPathTrait},
+    merkle::compute_merkle,
+    trie_node::{TrieNodeTrait, VanillaTrieNode},
+    walk::{TrieNodeWalkTrait, WalkStop},
 };
+use cfx_db_errors::storage::{Error, Result};
+use cfx_storage_types::access_mode;
 use cfx_types::H256;
 use primitives::{MerkleHash, MptValue, MERKLE_NULL_NODE};
 use rlp::*;

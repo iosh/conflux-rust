@@ -9,34 +9,8 @@ pub mod tuple;
 pub mod guarded_value;
 pub mod wrap;
 
+pub use cfx_mpt::WrappedCreateFrom;
 pub use cfx_storage_types::{access_mode, to_key_prefix_iter_upper_bound};
-
-/// The purpose of this trait is to create a new value of a passed object,
-/// when the passed object is the value, simply move the value;
-/// when the passed object is the reference, create the new value by clone.
-/// Other extension is possible.
-///
-/// The trait is used by ChildrenTable and slab.
-pub trait WrappedCreateFrom<FromType, ToType> {
-    fn take(x: FromType) -> ToType;
-    /// Unoptimized default implementation.
-    fn take_from(dest: &mut ToType, x: FromType) { *dest = Self::take(x); }
-}
-
-/*
-/// This is correct but we don't use this implementation.
-impl<T> WrappedCreateFrom<T, UnsafeCell<T>> for UnsafeCell<T> {
-    fn take(val: T) -> UnsafeCell<T> { UnsafeCell::new(val) }
-}
-*/
-
-impl<'x, T: Clone> WrappedCreateFrom<&'x T, UnsafeCell<T>> for UnsafeCell<T> {
-    fn take(val: &'x T) -> UnsafeCell<T> { UnsafeCell::new(val.clone()) }
-
-    fn take_from(dest: &mut UnsafeCell<T>, x: &'x T) {
-        dest.get_mut().clone_from(x);
-    }
-}
 
 pub trait UnsafeCellExtension<T: Sized> {
     fn get_ref(&self) -> &T;
