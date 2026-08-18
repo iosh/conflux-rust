@@ -30,16 +30,32 @@ impl PosVM {
         transactions: Vec<Transaction>, state_view: &dyn StateView,
         catch_up_mode: bool,
     ) -> Result<Vec<TransactionOutput>, VMStatus> {
+        Self::execute_block_with_config(
+            &POS_STATE_CONFIG,
+            transactions,
+            state_view,
+            catch_up_mode,
+        )
+    }
+
+    pub fn execute_block_with_config(
+        config: &impl PosStateConfigTrait, transactions: Vec<Transaction>,
+        state_view: &dyn StateView, catch_up_mode: bool,
+    ) -> Result<Vec<TransactionOutput>, VMStatus> {
         let mut vm_outputs = Vec::new();
         for transaction in transactions {
             let output = match transaction {
                 Transaction::BlockMetadata(_) => {
-                    Self::process_block_metadata(state_view)?
+                    Self::process_block_metadata_with_config(
+                        config, state_view,
+                    )?
                 }
                 Transaction::UserTransaction(trans) => {
                     let tx = Self::check_signature_for_user_tx(trans)?;
                     let spec = Spec { catch_up_mode };
-                    Self::process_user_transaction(state_view, &tx, &spec)?
+                    Self::process_user_transaction_with_config(
+                        config, state_view, &tx, &spec,
+                    )?
                 }
                 Transaction::GenesisTransaction(events) => {
                     Self::process_genesis_transaction(events)?
@@ -53,14 +69,14 @@ impl PosVM {
 }
 
 impl PosVM {
-    fn process_block_metadata(
-        state_view: &dyn StateView,
+    fn process_block_metadata_with_config(
+        config: &impl PosStateConfigTrait, state_view: &dyn StateView,
     ) -> Result<TransactionOutput, VMStatus> {
         let mut events = state_view.pos_state().get_unlock_events();
         diem_debug!("get_unlock_events: {}", events.len());
 
         let next_view = state_view.pos_state().current_view() + 1;
-        let (term, view_in_term) = POS_STATE_CONFIG.get_term_view(next_view);
+        let (term, view_in_term) = config.get_term_view(next_view);
 
         // TODO(lpl): Simplify.
         if view_in_term == 0 {
@@ -93,28 +109,25 @@ impl PosVM {
         })
     }
 
-    fn process_user_transaction(
-        state_view: &dyn StateView, tx: &SignatureCheckedTransaction,
-        spec: &Spec,
+    fn process_user_transaction_with_config(
+        config: &impl PosStateConfigTrait, state_view: &dyn StateView,
+        tx: &SignatureCheckedTransaction, spec: &Spec,
     ) -> Result<TransactionOutput, VMStatus> {
         let events = match tx.payload() {
-            TransactionPayload::Election(election_payload) => {
-                election_payload.execute(state_view, tx, spec)?
-            }
-            TransactionPayload::Retire(retire_payload) => {
-                retire_payload.execute(state_view, tx, spec)?
-            }
-            TransactionPayload::PivotDecision(pivot_decision) => {
-                pivot_decision.execute(state_view, tx, spec)?
-            }
+            TransactionPayload::Election(election_payload) => election_payload
+                .execute_with_config(config, state_view, tx, spec)?,
+            TransactionPayload::Retire(retire_payload) => retire_payload
+                .execute_with_config(config, state_view, tx, spec)?,
+            TransactionPayload::PivotDecision(pivot_decision) => pivot_decision
+                .execute_with_config(config, state_view, tx, spec)?,
             TransactionPayload::Register(register) => {
-                register.execute(state_view, tx, spec)?
+                register.execute_with_config(config, state_view, tx, spec)?
             }
             TransactionPayload::UpdateVotingPower(update) => {
-                update.execute(state_view, tx, spec)?
+                update.execute_with_config(config, state_view, tx, spec)?
             }
             TransactionPayload::Dispute(dispute) => {
-                dispute.execute(state_view, tx, spec)?
+                dispute.execute_with_config(config, state_view, tx, spec)?
             }
             _ => return Err(VMStatus::Error(StatusCode::CFX_UNEXPECTED_TX)),
         };
@@ -143,17 +156,31 @@ pub trait ExecutableBuiltinTx {
         &self, state_view: &dyn StateView, tx: &SignatureCheckedTransaction,
         spec: &Spec,
     ) -> Result<Vec<ContractEvent>, VMStatus>;
+
+    fn execute_with_config(
+        &self, _config: &impl PosStateConfigTrait, state_view: &dyn StateView,
+        tx: &SignatureCheckedTransaction, spec: &Spec,
+    ) -> Result<Vec<ContractEvent>, VMStatus> {
+        self.execute(state_view, tx, spec)
+    }
 }
 
 impl ExecutableBuiltinTx for ElectionPayload {
     fn execute(
-        &self, state_view: &dyn StateView, _tx: &SignatureCheckedTransaction,
+        &self, state_view: &dyn StateView, tx: &SignatureCheckedTransaction,
         spec: &Spec,
+    ) -> Result<Vec<ContractEvent>, VMStatus> {
+        self.execute_with_config(&POS_STATE_CONFIG, state_view, tx, spec)
+    }
+
+    fn execute_with_config(
+        &self, config: &impl PosStateConfigTrait, state_view: &dyn StateView,
+        _tx: &SignatureCheckedTransaction, spec: &Spec,
     ) -> Result<Vec<ContractEvent>, VMStatus> {
         if !spec.catch_up_mode {
             state_view
                 .pos_state()
-                .validate_election(self)
+                .validate_election_with_config(config, self)
                 .map_err(|e| {
                     diem_error!("election tx error: {:?}", e);
                     VMStatus::Error(StatusCode::CFX_INVALID_TX)
@@ -190,21 +217,28 @@ impl ExecutableBuiltinTx for PivotBlockDecision {
 
 impl ExecutableBuiltinTx for DisputePayload {
     fn execute(
-        &self, state_view: &dyn StateView, _tx: &SignatureCheckedTransaction,
-        _spec: &Spec,
+        &self, state_view: &dyn StateView, tx: &SignatureCheckedTransaction,
+        spec: &Spec,
+    ) -> Result<Vec<ContractEvent>, VMStatus> {
+        self.execute_with_config(&POS_STATE_CONFIG, state_view, tx, spec)
+    }
+
+    fn execute_with_config(
+        &self, config: &impl PosStateConfigTrait, state_view: &dyn StateView,
+        _tx: &SignatureCheckedTransaction, _spec: &Spec,
     ) -> Result<Vec<ContractEvent>, VMStatus> {
         let view = state_view.pos_state().current_view();
-        let offense_epoch = verify_dispute(self, view)
+        let offense_epoch = verify_dispute_with_config(config, self, view)
             .ok_or(VMStatus::Error(StatusCode::CFX_INVALID_TX))?;
         state_view
             .pos_state()
-            .validate_dispute(self, offense_epoch)
+            .validate_dispute_with_config(config, self, offense_epoch)
             .map_err(|e| {
                 diem_error!("dispute tx error: {:?}", e);
                 VMStatus::Error(StatusCode::CFX_INVALID_TX)
             })?;
         Ok(vec![
-            if POS_STATE_CONFIG.cip173_active(view) {
+            if config.cip173_active(view) {
                 self.to_event_v2(offense_epoch)
             } else {
                 self.to_event()
@@ -261,13 +295,19 @@ fn verify_dispute_proposal(
 
 /// The epoch the offence claims, or `None` if the evidence is invalid.
 pub fn verify_dispute(dispute: &DisputePayload, view: u64) -> Option<u64> {
+    verify_dispute_with_config(&POS_STATE_CONFIG, dispute, view)
+}
+
+pub fn verify_dispute_with_config(
+    config: &impl PosStateConfigTrait, dispute: &DisputePayload, view: u64,
+) -> Option<u64> {
     let computed_address =
         from_consensus_public_key(&dispute.bls_pub_key, &dispute.vrf_pub_key);
     if dispute.address != computed_address {
         diem_trace!("Incorrect address and public keys");
         return None;
     }
-    let enforce_conflict = POS_STATE_CONFIG.cip173_active(view);
+    let enforce_conflict = config.cip173_active(view);
     match &dispute.conflicting_votes {
         ConflictSignature::Proposal((proposal_byte1, proposal_byte2)) => {
             let proposal1: Block =

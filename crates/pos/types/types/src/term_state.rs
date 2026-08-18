@@ -159,9 +159,12 @@ impl NodeList {
         }
     }
 
-    fn add_node(&mut self, vrf_output: HashValue, node_id: ElectionNodeID) {
+    fn add_node(
+        &mut self, config: &impl PosStateConfigTrait, vrf_output: HashValue,
+        node_id: ElectionNodeID,
+    ) {
         if let NodeList::Electing(heap) = self {
-            heap.add_node(vrf_output, node_id);
+            heap.add_node_with_config(config, vrf_output, node_id);
         } else {
             panic!("The term is finalized");
         }
@@ -169,9 +172,17 @@ impl NodeList {
 
     #[must_use]
     fn finalize_elect(&mut self) -> CandyMap {
+        self.finalize_elect_with_config(&POS_STATE_CONFIG)
+    }
+
+    #[must_use]
+    fn finalize_elect_with_config(
+        &mut self, config: &impl PosStateConfigTrait,
+    ) -> CandyMap {
         if let NodeList::Electing(heap) = self {
             let electing_heap = std::mem::take(heap);
-            let (elected_heap, candy_map) = electing_heap.finalize();
+            let (elected_heap, candy_map) =
+                electing_heap.finalize_with_config(config);
             *self = NodeList::Elected(elected_heap);
             return candy_map;
         } else {
@@ -210,26 +221,34 @@ impl ElectedMap {
 
 impl ElectingHeap {
     pub fn read_top_electing(&self) -> BTreeMap<AccountAddress, u64> {
+        self.read_top_electing_with_config(&POS_STATE_CONFIG)
+    }
+
+    pub fn read_top_electing_with_config(
+        &self, config: &impl PosStateConfigTrait,
+    ) -> BTreeMap<AccountAddress, u64> {
         let mut top_electing: BTreeMap<AccountAddress, u64> = BTreeMap::new();
         let mut clone = self.clone();
         let mut count = 0usize;
         while let Some((_, node_id)) = clone.0.pop() {
             *top_electing.entry(node_id.node_id.addr).or_insert(0) += 1;
             count += 1;
-            if count >= POS_STATE_CONFIG.term_elected_size() {
+            if count >= config.term_elected_size() {
                 break;
             }
         }
         top_electing
     }
 
-    fn finalize(mut self) -> (ElectedMap, CandyMap) {
+    fn finalize_with_config(
+        mut self, config: &impl PosStateConfigTrait,
+    ) -> (ElectedMap, CandyMap) {
         let mut elected_map = ElectedMap::default();
         let mut count = 0usize;
         while let Some((_, node_id)) = self.0.pop() {
             *elected_map.0.entry(node_id.node_id.addr).or_insert(0) += 1;
             count += 1;
-            if count >= POS_STATE_CONFIG.term_elected_size() {
+            if count >= config.term_elected_size() {
                 break;
             }
         }
@@ -241,7 +260,15 @@ impl ElectingHeap {
     }
 
     pub fn add_node(&mut self, hash: HashValue, node_id: ElectionNodeID) {
-        let is_not_full_set = self.0.len() < POS_STATE_CONFIG.term_max_size();
+        self.add_node_with_config(&POS_STATE_CONFIG, hash, node_id)
+    }
+
+    pub fn add_node_with_config(
+        &mut self, config: &impl PosStateConfigTrait, hash: HashValue,
+        node_id: ElectionNodeID,
+    ) {
+        let term_max_size = config.term_max_size();
+        let is_not_full_set = self.0.len() < term_max_size;
         self.1.insert(node_id.node_id.addr.clone());
         if self
             .0
@@ -249,7 +276,7 @@ impl ElectingHeap {
             .map_or(true, |(max_value, _)| is_not_full_set || hash < *max_value)
         {
             self.0.push((hash, node_id.clone()));
-            if self.0.len() > POS_STATE_CONFIG.term_max_size() {
+            if self.0.len() > term_max_size {
                 self.0.pop();
             }
         }
@@ -269,7 +296,13 @@ impl TermData {
     pub fn start_view(&self) -> u64 { self.start_view }
 
     pub fn get_term(&self) -> u64 {
-        POS_STATE_CONFIG.get_term_view(self.start_view).0
+        self.get_term_with_config(&POS_STATE_CONFIG)
+    }
+
+    pub fn get_term_with_config(
+        &self, config: &impl PosStateConfigTrait,
+    ) -> u64 {
+        config.get_term_view(self.start_view).0
     }
 
     pub fn node_list(&self) -> &NodeList { &self.node_list }
@@ -300,9 +333,16 @@ impl Eq for ElectingHeap {}
 
 impl TermData {
     fn next_term(&self, node_list: NodeList, seed: Vec<u8>) -> Self {
+        self.next_term_with_config(&POS_STATE_CONFIG, node_list, seed)
+    }
+
+    fn next_term_with_config(
+        &self, config: &impl PosStateConfigTrait, node_list: NodeList,
+        seed: Vec<u8>,
+    ) -> Self {
         TermData {
             start_view: self.start_view
-                + POS_STATE_CONFIG.round_per_term(self.start_view),
+                + config.round_per_term(self.start_view),
             seed,
             node_list,
         }
@@ -374,6 +414,17 @@ impl TermList {
     pub fn new_node_elected(
         &mut self, event: &ElectionEvent, voting_power: u64,
     ) -> anyhow::Result<()> {
+        self.new_node_elected_with_config(
+            &POS_STATE_CONFIG,
+            event,
+            voting_power,
+        )
+    }
+
+    pub fn new_node_elected_with_config(
+        &mut self, config: &impl PosStateConfigTrait, event: &ElectionEvent,
+        voting_power: u64,
+    ) -> anyhow::Result<()> {
         if event.start_term != self.electing_term_number() {
             bail!("term is not open for election, opening term {}, election term {}", self.electing_term_number(),event.start_term);
         }
@@ -393,6 +444,7 @@ impl TermList {
             // election.
             let priority = vrf_number_with_nonce(&event.vrf_output, nonce);
             term.node_list.add_node(
+                config,
                 priority,
                 ElectionNodeID::new(event.node_id.clone(), nonce),
             );
@@ -401,6 +453,13 @@ impl TermList {
     }
 
     pub fn new_term(&mut self, new_term: u64, new_seed: Vec<u8>) {
+        self.new_term_with_config(&POS_STATE_CONFIG, new_term, new_seed)
+    }
+
+    pub fn new_term_with_config(
+        &mut self, config: &impl PosStateConfigTrait, new_term: u64,
+        new_seed: Vec<u8>,
+    ) {
         diem_debug!(
             "new_term={}, start_view:{:?}",
             new_term,
@@ -417,26 +476,33 @@ impl TermList {
         // This double-check should always pass.
         debug_assert!(
             Some(self.term_list[TERM_LIST_LEN].start_view)
-                == POS_STATE_CONFIG.get_starting_view_for_term(new_term)
+                == config.get_starting_view_for_term(new_term)
         );
         self.term_list.remove(0);
-        let new_term = self
-            .term_list
-            .last()
-            .unwrap()
-            .next_term(Default::default(), new_seed);
+        let new_term = self.term_list.last().unwrap().next_term_with_config(
+            config,
+            Default::default(),
+            new_seed,
+        );
         self.term_list.push(new_term);
         self.electing_index -= 1;
         assert_eq!(self.electing_index, 6);
     }
 
     pub fn finalize_election(&mut self) {
+        self.finalize_election_with_config(&POS_STATE_CONFIG)
+    }
+
+    pub fn finalize_election_with_config(
+        &mut self, config: &impl PosStateConfigTrait,
+    ) {
         diem_debug!(
             "Finalize election of term {}",
             self.electing_term_number()
         );
         let finalize_term = self.electing_term_mut();
-        let candy_map = finalize_term.node_list.finalize_elect();
+        let candy_map =
+            finalize_term.node_list.finalize_elect_with_config(config);
         self.candy_rewards = candy_map;
         self.electing_index += 1;
         assert_eq!(self.electing_index, 7);
@@ -568,11 +634,17 @@ impl From<PosStateV1> for PosState {
 /// future in-memory use of `PosState` cannot inherit the format fork.
 impl PosState {
     pub fn encode_persisted(&self) -> Result<Vec<u8>> {
+        self.encode_persisted_with_config(&POS_STATE_CONFIG)
+    }
+
+    pub fn encode_persisted_with_config(
+        &self, config: &impl PosStateConfigTrait,
+    ) -> Result<Vec<u8>> {
         // Past the gate the new layout goes out even when the map is empty, so
         // that a binary without CIP-173 fails to read the row instead of
         // booting and executing disputes under rules the chain has left.
         if self.dispute_records.is_empty()
-            && !POS_STATE_CONFIG.cip173_active(self.current_view)
+            && !config.cip173_active(self.current_view)
         {
             bcs::to_bytes(&PosStateV1Ref {
                 node_map: &self.node_map,
@@ -592,6 +664,12 @@ impl PosState {
     }
 
     pub fn decode_persisted(data: &[u8]) -> Result<Self> {
+        Self::decode_persisted_with_config(&POS_STATE_CONFIG, data)
+    }
+
+    pub fn decode_persisted_with_config(
+        config: &impl PosStateConfigTrait, data: &[u8],
+    ) -> Result<Self> {
         // Complete BCS encodings are prefix-free, so the trial order is safe:
         // old bytes hit `Eof` under the current layout, and current bytes
         // leave a trailing map that `from_bytes` rejects as `RemainingInput`.
@@ -611,7 +689,7 @@ impl PosState {
         // still pre-CIP-173, so an older binary that stopped here was in the
         // right. One view further and it executed a block it should not have.
         ensure!(
-            legacy.current_view <= POS_STATE_CONFIG.cip173_transition_view(),
+            legacy.current_view <= config.cip173_transition_view(),
             "PoS state at view {} is stored in the pre-CIP-173 layout, so it \
              was written past the transition view by a binary without \
              CIP-173; its dispute state is missing and cannot be recovered",
@@ -640,12 +718,28 @@ impl PosState {
         initial_committee: Vec<(AccountAddress, u64)>,
         genesis_pivot_decision: PivotBlockDecision,
     ) -> Self {
+        Self::new_with_config(
+            &POS_STATE_CONFIG,
+            initial_seed,
+            initial_nodes,
+            initial_committee,
+            genesis_pivot_decision,
+        )
+    }
+
+    pub fn new_with_config(
+        config: &impl PosStateConfigTrait, initial_seed: Vec<u8>,
+        initial_nodes: Vec<(NodeID, u64)>,
+        initial_committee: Vec<(AccountAddress, u64)>,
+        genesis_pivot_decision: PivotBlockDecision,
+    ) -> Self {
         let mut node_map = HashMap::new();
         let mut node_list = BTreeMap::default();
         for (node_id, total_voting_power) in initial_nodes {
             let mut lock_status = NodeLockStatus::default();
             // The genesis block should not have updates for lock status.
-            lock_status.new_lock(
+            lock_status.new_lock_with_config(
+                config,
                 0,
                 total_voting_power,
                 true,
@@ -677,10 +771,13 @@ impl PosState {
         // Duplicate the initial term for the first TERM_LIST_LEN + 2 terms.
         for i in 0..(TERM_LIST_LEN + 1) {
             let last_term = term_list.last().unwrap();
-            let mut next_term =
-                last_term.next_term(Default::default(), initial_seed.clone());
+            let mut next_term = last_term.next_term_with_config(
+                config,
+                Default::default(),
+                initial_seed.clone(),
+            );
             if i < TERM_LIST_LEN - 1 {
-                let _ = next_term.node_list.finalize_elect();
+                let _ = next_term.node_list.finalize_elect_with_config(config);
             }
             term_list.push(next_term);
         }
@@ -780,6 +877,18 @@ impl PosState {
         &self, sender: &AccountAddress, auth_pk: &ConsensusPublicKey,
         election_tx: &ElectionPayload,
     ) -> Option<DiscardedVMStatus> {
+        self.validate_election_simple_with_config(
+            &POS_STATE_CONFIG,
+            sender,
+            auth_pk,
+            election_tx,
+        )
+    }
+
+    pub fn validate_election_simple_with_config(
+        &self, config: &impl PosStateConfigTrait, sender: &AccountAddress,
+        auth_pk: &ConsensusPublicKey, election_tx: &ElectionPayload,
+    ) -> Option<DiscardedVMStatus> {
         let node_id = NodeID::new(
             election_tx.public_key.clone(),
             election_tx.vrf_public_key.clone(),
@@ -789,12 +898,14 @@ impl PosState {
             node_id.addr,
             election_tx.target_term
         );
+
         // Sender must match the addr derived from the payload's
         // declared keys, so a registered submitter can't stuff another
         // node's payload keys.
         if *sender != node_id.addr {
             return Some(DiscardedVMStatus::ELECTION_SIGNER_MISMATCH);
         }
+
         let node = match self.check_sender_owns_auth_key(
             sender,
             auth_pk,
@@ -804,26 +915,28 @@ impl PosState {
             Err(err) => return Some(err),
         };
 
-        let target_view = match POS_STATE_CONFIG
+        let target_view = match config
             .get_starting_view_for_term(election_tx.target_term)
         {
             None => {
                 return Some(DiscardedVMStatus::ELECTION_TARGET_TERM_NOT_OPEN)
             }
-            Some(v) => v,
+            Some(view) => view,
         };
 
         if node.lock_status.available_votes() == 0 {
             return Some(DiscardedVMStatus::ELECTION_WITHOUT_VOTES);
         }
+
         // Do not check `ELECTION_TERM_END_ROUND` because we are using the
         // committed state in this simple validation.
         if target_view
             <= self.current_view
-                + POS_STATE_CONFIG.election_term_end_round(self.current_view)
+                + config.election_term_end_round(self.current_view)
         {
             return Some(DiscardedVMStatus::ELECTION_TARGET_TERM_NOT_OPEN);
         }
+
         None
     }
 
@@ -865,6 +978,12 @@ impl PosState {
     pub fn validate_election(
         &self, election_tx: &ElectionPayload,
     ) -> Result<()> {
+        self.validate_election_with_config(&POS_STATE_CONFIG, election_tx)
+    }
+
+    pub fn validate_election_with_config(
+        &self, config: &impl PosStateConfigTrait, election_tx: &ElectionPayload,
+    ) -> Result<()> {
         let node_id = NodeID::new(
             election_tx.public_key.clone(),
             election_tx.vrf_public_key.clone(),
@@ -874,6 +993,7 @@ impl PosState {
             node_id.addr,
             election_tx.target_term
         );
+
         let node = match self.node_map.get(&node_id.addr) {
             Some(node) => node,
             None => return Err(anyhow!("Election for non-existent node.")),
@@ -882,21 +1002,22 @@ impl PosState {
         if node.lock_status.available_votes() == 0 {
             bail!("Election without any votes");
         }
-        let target_view = match POS_STATE_CONFIG
+
+        let target_view = match config
             .get_starting_view_for_term(election_tx.target_term)
         {
             None => {
                 bail!("target view overflows, election_tx={:?}", election_tx)
             }
-            Some(v) => v,
+            Some(view) => view,
         };
+
         if target_view
             > self.current_view
-                + POS_STATE_CONFIG.election_term_start_round(self.current_view)
+                + config.election_term_start_round(self.current_view)
             || target_view
                 <= self.current_view
-                    + POS_STATE_CONFIG
-                        .election_term_end_round(self.current_view)
+                    + config.election_term_end_round(self.current_view)
         {
             bail!(
                 "Target term is not open for election: target={} current={}",
@@ -980,55 +1101,74 @@ impl PosState {
     pub fn validate_dispute(
         &self, dispute_payload: &DisputePayload, offense_epoch: u64,
     ) -> Result<()> {
+        self.validate_dispute_with_config(
+            &POS_STATE_CONFIG,
+            dispute_payload,
+            offense_epoch,
+        )
+    }
+
+    pub fn validate_dispute_with_config(
+        &self, config: &impl PosStateConfigTrait,
+        dispute_payload: &DisputePayload, offense_epoch: u64,
+    ) -> Result<()> {
         let node =
             self.node_map.get(&dispute_payload.address).ok_or_else(|| {
                 anyhow!("Unknown dispute node: {:?}", dispute_payload.address)
             })?;
+
         ensure!(
             node.lock_status.exempt_from_forfeit().is_none(),
             "Dispute a forfeited node: {:?}",
             dispute_payload.address
         );
-        if POS_STATE_CONFIG.cip173_active(self.current_view) {
+
+        if config.cip173_active(self.current_view) {
             self.check_dispute_admissible(
+                config,
                 &dispute_payload.address,
                 offense_epoch,
             )?;
         }
+
         Ok(())
     }
 
     fn check_dispute_admissible(
-        &self, address: &AccountAddress, offense_epoch: u64,
+        &self, config: &impl PosStateConfigTrait, address: &AccountAddress,
+        offense_epoch: u64,
     ) -> Result<()> {
-        let first_admissible = POS_STATE_CONFIG
-            .dispute_first_admissible_epoch()
-            .ok_or_else(|| {
+        let first_admissible =
+            config.dispute_first_admissible_epoch().ok_or_else(|| {
                 anyhow!("CIP-173 active with no scheduled transition view")
             })?;
+
         ensure!(
             offense_epoch >= first_admissible,
             "Dispute evidence predates CIP-173: offence epoch {}, first \
-             admissible {}",
+           admissible {}",
             offense_epoch,
             first_admissible
         );
+
         ensure!(
             offense_epoch <= self.epoch_state.epoch,
             "Dispute evidence claims an unreached epoch: offence epoch {}, \
-             current epoch {}",
+           current epoch {}",
             offense_epoch,
             self.epoch_state.epoch
         );
+
         if let Some(record) = self.dispute_records.get(address) {
             ensure!(
                 offense_epoch > record.last_offense_epoch,
                 "Dispute evidence already punished: offence epoch {}, \
-                 watermark {}",
+               watermark {}",
                 offense_epoch,
                 record.last_offense_epoch
             );
         }
+
         Ok(())
     }
 
@@ -1080,9 +1220,13 @@ impl PosState {
     /// Return `Some(target_term)` if `author` should send its election
     /// transaction.
     pub fn next_elect_term(&self, author: &AccountAddress) -> Option<u64> {
-        if self.current_view
-            < POS_STATE_CONFIG.first_start_election_view() as u64
-        {
+        self.next_elect_term_with_config(&POS_STATE_CONFIG, author)
+    }
+
+    pub fn next_elect_term_with_config(
+        &self, config: &impl PosStateConfigTrait, author: &AccountAddress,
+    ) -> Option<u64> {
+        if self.current_view < config.first_start_election_view() as u64 {
             return None;
         }
 
@@ -1107,25 +1251,33 @@ impl PosState {
     }
 
     pub fn final_serving_view(&self, author: &AccountAddress) -> Option<Round> {
+        self.final_serving_view_with_config(&POS_STATE_CONFIG, author)
+    }
+
+    pub fn final_serving_view_with_config(
+        &self, config: &impl PosStateConfigTrait, author: &AccountAddress,
+    ) -> Option<Round> {
         let mut final_elected_term = None;
         for term in self.term_list.term_list.iter().rev() {
             match &term.node_list {
                 NodeList::Electing(heap) => {
                     if heap.1.contains(author) {
-                        final_elected_term = Some(term.get_term());
+                        final_elected_term =
+                            Some(term.get_term_with_config(config));
                         break;
                     }
                 }
                 NodeList::Elected(map) => {
                     if map.0.contains_key(author) {
-                        final_elected_term = Some(term.get_term());
+                        final_elected_term =
+                            Some(term.get_term_with_config(config));
                         break;
                     }
                 }
             }
         }
         final_elected_term.map(|t| {
-            POS_STATE_CONFIG
+            config
                 .get_starting_view_for_term(t + TERM_LIST_LEN as u64)
                 .expect("checked term")
                 + 1
@@ -1186,6 +1338,17 @@ impl PosState {
     pub fn update_voting_power(
         &mut self, addr: &AccountAddress, increased_voting_power: u64,
     ) -> Result<()> {
+        self.update_voting_power_with_config(
+            &POS_STATE_CONFIG,
+            addr,
+            increased_voting_power,
+        )
+    }
+
+    pub fn update_voting_power_with_config(
+        &mut self, config: &impl PosStateConfigTrait, addr: &AccountAddress,
+        increased_voting_power: u64,
+    ) -> Result<()> {
         diem_trace!(
             "update_voting_power: {:?} {}",
             addr,
@@ -1199,7 +1362,8 @@ impl PosState {
             .filter(|lock_until| view < *lock_until);
         let mut update_views = Vec::new();
         match self.node_map.get_mut(addr) {
-            Some(node_status) => node_status.lock_status.new_lock(
+            Some(node_status) => node_status.lock_status.new_lock_with_config(
+                config,
                 view,
                 increased_voting_power,
                 false,
@@ -1213,6 +1377,12 @@ impl PosState {
     }
 
     pub fn new_node_elected(&mut self, event: &ElectionEvent) -> Result<()> {
+        self.new_node_elected_with_config(&POS_STATE_CONFIG, event)
+    }
+
+    pub fn new_node_elected_with_config(
+        &mut self, config: &impl PosStateConfigTrait, event: &ElectionEvent,
+    ) -> Result<()> {
         diem_debug!(
             "new_node_elected: {:?} {:?}",
             event.node_id,
@@ -1234,9 +1404,13 @@ impl PosState {
             // A workaround for too much staked CFX in Testnet.
             let bounded_power = std::cmp::min(
                 voting_power,
-                POS_STATE_CONFIG.max_nonce_per_account(self.current_view()),
+                config.max_nonce_per_account(self.current_view()),
             );
-            self.term_list.new_node_elected(event, bounded_power)?;
+            self.term_list.new_node_elected_with_config(
+                config,
+                event,
+                bounded_power,
+            )?;
         } else {
             diem_warn!("No votes can be elected: {:?} {:?}. available: {}, serving: {}.", event.node_id,
             event.start_term,available_votes,serving_votes);
@@ -1248,6 +1422,12 @@ impl PosState {
     /// EpochState. And `next_view` will not be called for blocks following
     /// a pending reconfiguration block.
     pub fn next_view(&mut self) -> Result<Option<EpochState>> {
+        self.next_view_with_config(&POS_STATE_CONFIG)
+    }
+
+    pub fn next_view_with_config(
+        &mut self, config: &impl PosStateConfigTrait,
+    ) -> Result<Option<EpochState>> {
         // Increase view after updating node status above to get a correct
         // `status_start_view`.
         self.current_view += 1;
@@ -1260,8 +1440,9 @@ impl PosState {
         if let Some(addresses) = self.node_map_hint.remove(&self.current_view) {
             for address in addresses {
                 let node = self.node_map.get_mut(&address).expect("exists");
-                let new_votes_unlocked =
-                    node.lock_status.update(self.current_view);
+                let new_votes_unlocked = node
+                    .lock_status
+                    .update_with_config(config, self.current_view);
                 if new_votes_unlocked {
                     self.unlock_event_hint.insert(address);
                 }
@@ -1273,25 +1454,23 @@ impl PosState {
             // genesis
             Some(EpochState::new(1, verifier, term_seed.clone()))
         } else {
-            let (term, view_in_term) =
-                POS_STATE_CONFIG.get_term_view(self.current_view);
+            let (term, view_in_term) = config.get_term_view(self.current_view);
             if view_in_term == 0 {
                 let new_term = term;
                 let (verifier, term_seed) = self.get_committee_at(new_term)?;
                 // generate new epoch for new term.
-                self.term_list.new_term(
+                self.term_list.new_term_with_config(
+                    config,
                     new_term,
                     self.pivot_decision.block_hash.as_bytes().to_vec(),
                 );
                 // TODO(lpl): If we allow epoch changes within a term, this
                 // should be updated.
                 Some(EpochState::new(new_term + 1, verifier, term_seed.clone()))
-            } else if self.current_view
-                >= POS_STATE_CONFIG.first_end_election_view()
-                && view_in_term
-                    == POS_STATE_CONFIG.round_per_term(self.current_view) / 2
+            } else if self.current_view >= config.first_end_election_view()
+                && view_in_term == config.round_per_term(self.current_view) / 2
             {
-                self.term_list.finalize_election();
+                self.term_list.finalize_election_with_config(config);
                 None
             } else {
                 None
@@ -1306,11 +1485,19 @@ impl PosState {
     pub fn retire_node(
         &mut self, addr: &AccountAddress, votes: u64,
     ) -> Result<()> {
+        self.retire_node_with_config(&POS_STATE_CONFIG, addr, votes)
+    }
+
+    pub fn retire_node_with_config(
+        &mut self, config: &impl PosStateConfigTrait, addr: &AccountAddress,
+        votes: u64,
+    ) -> Result<()> {
         diem_trace!("retire_node: {:?} {}", addr, votes);
         let mut update_views = Vec::new();
         match self.node_map.get_mut(&addr) {
             Some(node) => {
-                node.lock_status.new_unlock(
+                node.lock_status.new_unlock_with_config(
+                    config,
                     self.current_view,
                     votes,
                     &mut update_views,
@@ -1323,12 +1510,20 @@ impl PosState {
     }
 
     pub fn force_retire_node(&mut self, addr: &AccountAddress) -> Result<()> {
+        self.force_retire_node_with_config(&POS_STATE_CONFIG, addr)
+    }
+
+    pub fn force_retire_node_with_config(
+        &mut self, config: &impl PosStateConfigTrait, addr: &AccountAddress,
+    ) -> Result<()> {
         diem_trace!("force_retire_node: {:?}", addr);
         let mut update_views = Vec::new();
         match self.node_map.get_mut(&addr) {
-            Some(node) => node
-                .lock_status
-                .force_retire(self.current_view, &mut update_views),
+            Some(node) => node.lock_status.force_retire_with_config(
+                config,
+                self.current_view,
+                &mut update_views,
+            ),
             None => bail!("Force retiring node does not exist"),
         };
         self.record_update_views(addr, update_views);
@@ -1339,13 +1534,20 @@ impl PosState {
     pub fn forfeit_node(
         &mut self, addr: &AccountAddress, offense_epoch: Option<u64>,
     ) -> Result<()> {
+        self.forfeit_node_with_config(&POS_STATE_CONFIG, addr, offense_epoch)
+    }
+
+    pub fn forfeit_node_with_config(
+        &mut self, config: &impl PosStateConfigTrait, addr: &AccountAddress,
+        offense_epoch: Option<u64>,
+    ) -> Result<()> {
         diem_trace!("forfeit_node: {:?} {:?}", addr, offense_epoch);
         let view = self.current_view;
         let previous = self.dispute_records.get(addr).copied();
 
-        let (rule, record) = match POS_STATE_CONFIG.dispute_locked_views(view) {
+        let (rule, record) = match config.dispute_locked_views(view) {
             None => (ForfeitRule::FreezeWithdrawable, None),
-            Some(locked_views) if !POS_STATE_CONFIG.cip173_active(view) => (
+            Some(locked_views) if !config.cip173_active(view) => (
                 ForfeitRule::RelockOnActive {
                     deadline: view.saturating_add(locked_views),
                 },

@@ -160,6 +160,12 @@ impl NodeLockStatus {
 
 impl NodeLockStatus {
     pub(super) fn update(&mut self, view: View) -> bool {
+        self.update_with_config(&POS_STATE_CONFIG, view)
+    }
+
+    pub(super) fn update_with_config(
+        &mut self, config: &impl PosStateConfigTrait, view: View,
+    ) -> bool {
         let mut new_votes_unlocked = false;
 
         while let Some(item) = self.in_queue.pop_by_view(view) {
@@ -172,8 +178,7 @@ impl NodeLockStatus {
         }
 
         if self.force_retired.map_or(false, |retire_view| {
-            view >= retire_view
-                + POS_STATE_CONFIG.force_retired_locked_views(view)
+            view >= retire_view + config.force_retired_locked_views(view)
         }) {
             self.force_retired = None;
         }
@@ -189,6 +194,21 @@ impl NodeLockStatus {
         &mut self, view: View, votes: u64, initialize_mode: bool,
         dispute_lock_until: Option<View>, update_views: &mut Vec<View>,
     ) {
+        self.new_lock_with_config(
+            &POS_STATE_CONFIG,
+            view,
+            votes,
+            initialize_mode,
+            dispute_lock_until,
+            update_views,
+        )
+    }
+
+    pub(super) fn new_lock_with_config(
+        &mut self, config: &impl PosStateConfigTrait, view: View, votes: u64,
+        initialize_mode: bool, dispute_lock_until: Option<View>,
+        update_views: &mut Vec<View>,
+    ) {
         if votes == 0 {
             return;
         }
@@ -203,13 +223,13 @@ impl NodeLockStatus {
         // into active voting power, so the deposit queues for withdrawal.
         if self.force_retired.is_some() || dispute_lock_until.is_some() {
             let exit_view = (view
-                + POS_STATE_CONFIG.in_queue_locked_views(view)
-                + POS_STATE_CONFIG.out_queue_locked_views(view))
+                + config.in_queue_locked_views(view)
+                + config.out_queue_locked_views(view))
             .max(dispute_lock_until.unwrap_or(0));
             self.out_queue.push(exit_view, votes, update_views);
         } else {
             self.available_votes += votes;
-            let exit_view = view + POS_STATE_CONFIG.in_queue_locked_views(view);
+            let exit_view = view + config.in_queue_locked_views(view);
             self.in_queue.push(exit_view, votes, update_views);
         }
     }
@@ -217,6 +237,18 @@ impl NodeLockStatus {
     pub(super) fn new_unlock(
         &mut self, view: View, to_unlock_votes: u64,
         update_views: &mut Vec<View>,
+    ) {
+        self.new_unlock_with_config(
+            &POS_STATE_CONFIG,
+            view,
+            to_unlock_votes,
+            update_views,
+        )
+    }
+
+    pub(super) fn new_unlock_with_config(
+        &mut self, config: &impl PosStateConfigTrait, view: View,
+        to_unlock_votes: u64, update_views: &mut Vec<View>,
     ) {
         if to_unlock_votes == 0 {
             return;
@@ -232,8 +264,7 @@ impl NodeLockStatus {
             self.locked -= votes;
             self.available_votes -= votes;
 
-            let exit_view =
-                view + POS_STATE_CONFIG.out_queue_locked_views(view);
+            let exit_view = view + config.out_queue_locked_views(view);
             self.out_queue.push(exit_view, votes, update_views);
         }
 
@@ -256,8 +287,7 @@ impl NodeLockStatus {
             rest_votes -= item.votes;
             self.available_votes -= item.votes;
 
-            let exit_view =
-                item.view + POS_STATE_CONFIG.out_queue_locked_views(view);
+            let exit_view = item.view + config.out_queue_locked_views(view);
             self.out_queue.push(exit_view, item.votes, update_views);
         }
     }
@@ -265,11 +295,22 @@ impl NodeLockStatus {
     pub(super) fn force_retire(
         &mut self, view: View, callback_views: &mut Vec<View>,
     ) {
+        self.force_retire_with_config(&POS_STATE_CONFIG, view, callback_views)
+    }
+
+    pub(super) fn force_retire_with_config(
+        &mut self, config: &impl PosStateConfigTrait, view: View,
+        callback_views: &mut Vec<View>,
+    ) {
         if self.force_retired.is_none() {
             self.force_retired = Some(view);
-            callback_views
-                .push(view + POS_STATE_CONFIG.force_retired_locked_views(view));
-            self.new_unlock(view, self.available_votes, callback_views);
+            callback_views.push(view + config.force_retired_locked_views(view));
+            self.new_unlock_with_config(
+                config,
+                view,
+                self.available_votes,
+                callback_views,
+            );
         }
     }
 
