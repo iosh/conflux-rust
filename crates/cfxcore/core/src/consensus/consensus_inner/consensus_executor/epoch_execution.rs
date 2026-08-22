@@ -10,7 +10,7 @@ use cfx_statedb::{Error as DbErrorKind, Result as DbResult};
 use cfx_types::{AddressSpaceUtil, Space, SpaceMap, H256, U256};
 use primitives::{
     receipt::BlockReceipts, AccessListItem, Action, Block, BlockHeader,
-    BlockNumber, Receipt, SignedTransaction, TransactionIndex,
+    Receipt, SignedTransaction, TransactionIndex,
 };
 
 use crate::{
@@ -23,14 +23,9 @@ use cfx_execute_helper::{
     tx_outcome::{make_process_tx_outcome, ProcessTxOutcome},
 };
 use cfx_executor::{
+    epoch_execution::{before_block_execution, before_epoch_execution},
     executive::{ExecutiveContext, TransactOptions, TransactSettings},
-    internal_contract::{
-        block_hash_slot, epoch_hash_slot, initialize_internal_contract_accounts,
-    },
-    state::{
-        initialize_cip107, initialize_cip137,
-        initialize_or_update_dao_voted_params, State,
-    },
+    state::State,
 };
 use cfx_vm_types::Env;
 
@@ -56,7 +51,7 @@ impl ConsensusExecutionHandler {
 
         let dry_run = virtual_call.is_some();
 
-        self.before_epoch_execution(state, &*pivot_block)?;
+        before_epoch_execution(state, self.machine.as_ref(), pivot_block)?;
 
         let base_gas_price =
             pivot_block.block_header.base_price().unwrap_or_default();
@@ -293,8 +288,12 @@ impl ConsensusExecutionHandler {
         // intermediate step. Since we are not sure which steps will influnce
         // `secondary_reward`, we must `secondary_reward` at the same point to
         // keep the backward compatible.
-        let secondary_reward =
-            self.before_block_execution(state, block_number, block)?;
+        let secondary_reward = before_block_execution(
+            state,
+            self.machine.as_ref(),
+            block_number,
+            block,
+        )?;
 
         let mut env = self.make_block_env(block_context);
 
@@ -461,83 +460,6 @@ impl ConsensusExecutionHandler {
         observer
     }
 
-    fn before_epoch_execution(
-        &self, state: &mut State, pivot_block: &Block,
-    ) -> DbResult<()> {
-        let params = self.machine.params();
-
-        let epoch_number = pivot_block.block_header.height();
-        let hash = pivot_block.hash();
-        let parent_hash = pivot_block.block_header.parent_hash();
-
-        if epoch_number >= params.transition_heights.cip133e {
-            state.set_system_storage(
-                epoch_hash_slot(epoch_number).into(),
-                U256::from_big_endian(&hash.0),
-            )?;
-        }
-
-        if epoch_number >= params.transition_heights.eip2935 {
-            state.set_eip2935_storage(epoch_number - 1, *parent_hash)?;
-        }
-        Ok(())
-    }
-
-    pub fn before_block_execution(
-        &self, state: &mut State, block_number: BlockNumber, block: &Block,
-    ) -> DbResult<U256> {
-        let params = self.machine.params();
-        let transition_numbers = &params.transition_numbers;
-
-        let cip94_start = transition_numbers.cip94n;
-        let period = params.params_dao_vote_period;
-        // Update/initialize parameters before processing rewards.
-        if block_number >= cip94_start
-            && (block_number - cip94_start) % period == 0
-        {
-            let set_pos_staking = block_number > transition_numbers.cip105;
-            initialize_or_update_dao_voted_params(state, set_pos_staking)?;
-        }
-
-        // Initialize old_storage_point_prop_ratio in the state.
-        // The time may not be in the vote period boundary, so this is not
-        // integrated with `initialize_or_update_dao_voted_params`, but
-        // that function will update the value after cip107 is enabled
-        // here.
-        if block_number == transition_numbers.cip107 {
-            initialize_cip107(state)?;
-        }
-
-        if block_number >= transition_numbers.cip133b {
-            state.set_system_storage(
-                block_hash_slot(block_number).into(),
-                U256::from_big_endian(&block.hash().0),
-            )?;
-        }
-
-        if block_number == transition_numbers.cip137 {
-            initialize_cip137(state);
-        }
-
-        if block_number < transition_numbers.cip43a {
-            state.bump_block_number_accumulate_interest();
-        }
-
-        let secondary_reward = state.secondary_reward();
-
-        state.inc_distributable_pos_interest(block_number)?;
-
-        initialize_internal_contract_accounts(
-            state,
-            self.machine
-                .internal_contracts()
-                .initialized_at(block_number),
-        )?;
-
-        state.commit_cache(false);
-
-        Ok(secondary_reward)
-    }
 }
 
 struct EpochProcessContext<'a> {

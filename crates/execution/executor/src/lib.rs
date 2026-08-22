@@ -25,6 +25,9 @@ pub mod context;
 /// the Conflux specification, and submitting them to the execution engine.
 pub mod executive;
 
+/// Protocol state transitions that run before epoch and block transactions.
+pub mod epoch_execution;
+
 /// Conflux Internal Contracts: Implements Conflux's builtin contracts.  
 pub mod internal_contract;
 
