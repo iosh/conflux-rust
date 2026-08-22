@@ -61,6 +61,7 @@ pub mod spec;
 /// Ledger State: Acts as a caching and checkpoint layer built upon semantically
 /// meaningful database interfaces for the execution.
 pub mod state;
+pub mod transaction_validation;
 
 pub use internal_contract::{InternalContractMap, InternalContractTrait};
 pub use observer as executive_observer;

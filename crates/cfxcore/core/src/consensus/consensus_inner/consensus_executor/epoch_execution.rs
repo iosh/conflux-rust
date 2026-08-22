@@ -459,7 +459,6 @@ impl ConsensusExecutionHandler {
         }
         observer
     }
-
 }
 
 struct EpochProcessContext<'a> {

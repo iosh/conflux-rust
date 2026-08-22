@@ -140,9 +140,8 @@ impl CustomData {
         if count == 0 {
             return Ok(Self::default());
         }
-        let value_encoded = transition_height
-            .expect("initialized")
-            .is_active_at(height);
+        let value_encoded =
+            transition_height.expect("initialized").is_active_at(height);
         let mut raw = Vec::new();
         let mut data_len = 0;
         if value_encoded {

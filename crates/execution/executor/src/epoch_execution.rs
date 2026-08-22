@@ -60,8 +60,7 @@ pub fn before_block_execution(
     let cip94_start = transition_numbers.cip94n;
     let period = params.params_dao_vote_period;
     // Update/initialize parameters before processing rewards.
-    if block_number >= cip94_start
-        && (block_number - cip94_start) % period == 0
+    if block_number >= cip94_start && (block_number - cip94_start) % period == 0
     {
         let set_pos_staking = block_number > transition_numbers.cip105;
         initialize_or_update_dao_voted_params(state, set_pos_staking)?;
