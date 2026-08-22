@@ -35,7 +35,7 @@ pub use crate::{
         VoteStakeInfo, VoteStakeList,
     },
     block::{Block, BlockNumber},
-    block_header::{BlockHeader, BlockHeaderBuilder},
+    block_header::{BlockHeader, BlockHeaderBuilder, Cip112TransitionHeight},
     block_number::compute_block_number,
     epoch::{BlockHashOrEpochNumber, EpochId, EpochNumber, NULL_EPOCH},
     log_entry::LogEntry,

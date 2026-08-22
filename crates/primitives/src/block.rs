@@ -2,7 +2,10 @@
 // Conflux is free software and distributed under GNU General Public License.
 // See http://www.gnu.org/licenses/
 
-use crate::{BlockHeader, SignedTransaction, TransactionWithSignature};
+use crate::{
+    BlockHeader, Cip112TransitionHeight, SignedTransaction,
+    TransactionWithSignature,
+};
 use byteorder::{ByteOrder, LittleEndian};
 use cfx_types::{Space, H256, U256};
 use keccak_hash::keccak;
@@ -169,6 +172,17 @@ impl Block {
     }
 
     pub fn decode_with_tx_public(rlp: &Rlp) -> Result<Self, DecoderError> {
+        Self::decode_with_tx_public_and_cip112(
+            rlp,
+            Cip112TransitionHeight::from_global(),
+        )
+    }
+
+    /// Decode a block with transaction public keys using an explicit CIP-112
+    /// transition height.
+    pub fn decode_with_tx_public_and_cip112(
+        rlp: &Rlp, transition_height: Cip112TransitionHeight,
+    ) -> Result<Self, DecoderError> {
         if rlp.as_raw().len() != rlp.payload_info()?.total() {
             return Err(DecoderError::RlpIsTooBig);
         }
@@ -177,7 +191,7 @@ impl Block {
         }
 
         Ok(Block::new_with_rlp_size(
-            rlp.val_at(0)?,
+            BlockHeader::decode_with_cip112(&rlp.at(0)?, transition_height)?,
             Self::decode_body_with_tx_public(&rlp.at(1)?)?,
             None,
             Some(rlp.as_raw().len()),
@@ -201,6 +215,15 @@ impl Encodable for Block {
 // without "sender" and "public" fields. So need to recover public later.
 impl Decodable for Block {
     fn decode(rlp: &Rlp) -> Result<Self, DecoderError> {
+        Self::decode_with_cip112(rlp, Cip112TransitionHeight::from_global())
+    }
+}
+
+impl Block {
+    /// Decode a block using an explicit CIP-112 transition height.
+    pub fn decode_with_cip112(
+        rlp: &Rlp, transition_height: Cip112TransitionHeight,
+    ) -> Result<Self, DecoderError> {
         if rlp.as_raw().len() != rlp.payload_info()?.total() {
             return Err(DecoderError::RlpIsTooBig);
         }
@@ -217,7 +240,7 @@ impl Decodable for Block {
         }
 
         Ok(Block::new_with_rlp_size(
-            rlp.val_at(0)?,
+            BlockHeader::decode_with_cip112(&rlp.at(0)?, transition_height)?,
             signed_transactions,
             Some(rlp.as_raw().len()),
             None,
@@ -348,6 +371,15 @@ impl Encodable for CompactBlock {
 
 impl Decodable for CompactBlock {
     fn decode(rlp: &Rlp) -> Result<Self, DecoderError> {
+        Self::decode_with_cip112(rlp, Cip112TransitionHeight::from_global())
+    }
+}
+
+impl CompactBlock {
+    /// Decode a compact block using an explicit CIP-112 transition height.
+    pub fn decode_with_cip112(
+        rlp: &Rlp, transition_height: Cip112TransitionHeight,
+    ) -> Result<Self, DecoderError> {
         let short_ids: Vec<u8> = rlp.val_at(2)?;
         if !short_ids
             .len()
@@ -356,7 +388,10 @@ impl Decodable for CompactBlock {
             return Err(DecoderError::Custom("Compact Block length Error!"));
         }
         Ok(CompactBlock {
-            block_header: rlp.val_at(0)?,
+            block_header: BlockHeader::decode_with_cip112(
+                &rlp.at(0)?,
+                transition_height,
+            )?,
             nonce: rlp.val_at(1)?,
             tx_short_ids: short_ids,
             reconstructed_txns: Vec::new(),
