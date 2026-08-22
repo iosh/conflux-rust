@@ -52,6 +52,10 @@ impl Cip112TransitionHeight {
     pub(crate) fn from_global() -> Self {
         Self::new(*CIP112_TRANSITION_HEIGHT.get().expect("initialized"))
     }
+
+    pub(crate) fn try_from_global() -> Option<Self> {
+        CIP112_TRANSITION_HEIGHT.get().copied().map(Self::new)
+    }
 }
 
 pub const BASE_PRICE_CHANGE_DENOMINATOR: usize = 8;
@@ -91,6 +95,9 @@ impl CustomData {
     fn from_items(
         items: &[Bytes], height: u64, transition_height: Cip112TransitionHeight,
     ) -> Self {
+        if items.is_empty() {
+            return Self::default();
+        }
         Self::from_items_with_encoding(
             items,
             transition_height.is_active_at(height),
@@ -126,17 +133,16 @@ impl CustomData {
     /// canonically re-encode; pre-CIP112 keep raw RLP verbatim.
     fn from_rlp(
         r: &Rlp, custom_start: usize, height: u64,
-        transition_height: Cip112TransitionHeight,
+        transition_height: Option<Cip112TransitionHeight>,
     ) -> Result<Self, DecoderError> {
         let item_count = r.item_count()?;
         let count = item_count.saturating_sub(custom_start);
-        let value_encoded = transition_height.is_active_at(height);
         if count == 0 {
-            return Ok(Self {
-                value_encoded,
-                ..Self::default()
-            });
+            return Ok(Self::default());
         }
+        let value_encoded = transition_height
+            .expect("initialized")
+            .is_active_at(height);
         let mut raw = Vec::new();
         let mut data_len = 0;
         if value_encoded {
@@ -567,9 +573,9 @@ impl BlockHeader {
     }
 
     pub fn decode_with_pow_hash(bytes: &[u8]) -> Result<Self, DecoderError> {
-        Self::decode_with_pow_hash_and_cip112(
+        Self::decode_with_pow_hash_internal(
             bytes,
-            Cip112TransitionHeight::from_global(),
+            Cip112TransitionHeight::try_from_global(),
         )
     }
 
@@ -577,6 +583,12 @@ impl BlockHeader {
     /// height.
     pub fn decode_with_pow_hash_and_cip112(
         bytes: &[u8], transition_height: Cip112TransitionHeight,
+    ) -> Result<Self, DecoderError> {
+        Self::decode_with_pow_hash_internal(bytes, Some(transition_height))
+    }
+
+    fn decode_with_pow_hash_internal(
+        bytes: &[u8], transition_height: Option<Cip112TransitionHeight>,
     ) -> Result<Self, DecoderError> {
         let r = Rlp::new(bytes);
         let mut rlp_part = BlockHeaderRlpPart {
@@ -778,13 +790,31 @@ impl BlockHeaderBuilder {
     }
 
     pub fn build(&self) -> BlockHeader {
-        self.build_with_cip112(Cip112TransitionHeight::from_global())
+        let custom = if self.custom.is_empty() {
+            CustomData::default()
+        } else {
+            CustomData::from_items(
+                &self.custom,
+                self.height,
+                Cip112TransitionHeight::from_global(),
+            )
+        };
+        self.build_with_custom_data(custom)
     }
 
     /// Build a header using an explicit CIP-112 transition height.
     pub fn build_with_cip112(
         &self, transition_height: Cip112TransitionHeight,
     ) -> BlockHeader {
+        let custom = CustomData::from_items(
+            &self.custom,
+            self.height,
+            transition_height,
+        );
+        self.build_with_custom_data(custom)
+    }
+
+    fn build_with_custom_data(&self, custom: CustomData) -> BlockHeader {
         let mut block_header = BlockHeader {
             rlp_part: BlockHeaderRlpPart {
                 parent_hash: self.parent_hash,
@@ -800,11 +830,7 @@ impl BlockHeaderBuilder {
                 adaptive: self.adaptive,
                 gas_limit: self.gas_limit,
                 referee_hashes: self.referee_hashes.clone(),
-                custom: CustomData::from_items(
-                    &self.custom,
-                    self.height,
-                    transition_height,
-                ),
+                custom,
                 nonce: self.nonce,
                 pos_reference: self.pos_reference,
                 base_price: self.base_price,
@@ -872,7 +898,7 @@ impl Encodable for BlockHeader {
 
 impl Decodable for BlockHeader {
     fn decode(r: &Rlp) -> Result<Self, DecoderError> {
-        Self::decode_with_cip112(r, Cip112TransitionHeight::from_global())
+        Self::decode_internal(r, Cip112TransitionHeight::try_from_global())
     }
 }
 
@@ -880,6 +906,12 @@ impl BlockHeader {
     /// Decode a header using an explicit CIP-112 transition height.
     pub fn decode_with_cip112(
         r: &Rlp, transition_height: Cip112TransitionHeight,
+    ) -> Result<Self, DecoderError> {
+        Self::decode_internal(r, Some(transition_height))
+    }
+
+    pub(crate) fn decode_internal(
+        r: &Rlp, transition_height: Option<Cip112TransitionHeight>,
     ) -> Result<Self, DecoderError> {
         let rlp_size = r.as_raw().len();
 

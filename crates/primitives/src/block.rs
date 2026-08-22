@@ -172,9 +172,9 @@ impl Block {
     }
 
     pub fn decode_with_tx_public(rlp: &Rlp) -> Result<Self, DecoderError> {
-        Self::decode_with_tx_public_and_cip112(
+        Self::decode_with_tx_public_internal(
             rlp,
-            Cip112TransitionHeight::from_global(),
+            Cip112TransitionHeight::try_from_global(),
         )
     }
 
@@ -182,6 +182,12 @@ impl Block {
     /// transition height.
     pub fn decode_with_tx_public_and_cip112(
         rlp: &Rlp, transition_height: Cip112TransitionHeight,
+    ) -> Result<Self, DecoderError> {
+        Self::decode_with_tx_public_internal(rlp, Some(transition_height))
+    }
+
+    fn decode_with_tx_public_internal(
+        rlp: &Rlp, transition_height: Option<Cip112TransitionHeight>,
     ) -> Result<Self, DecoderError> {
         if rlp.as_raw().len() != rlp.payload_info()?.total() {
             return Err(DecoderError::RlpIsTooBig);
@@ -191,7 +197,7 @@ impl Block {
         }
 
         Ok(Block::new_with_rlp_size(
-            BlockHeader::decode_with_cip112(&rlp.at(0)?, transition_height)?,
+            BlockHeader::decode_internal(&rlp.at(0)?, transition_height)?,
             Self::decode_body_with_tx_public(&rlp.at(1)?)?,
             None,
             Some(rlp.as_raw().len()),
@@ -215,7 +221,7 @@ impl Encodable for Block {
 // without "sender" and "public" fields. So need to recover public later.
 impl Decodable for Block {
     fn decode(rlp: &Rlp) -> Result<Self, DecoderError> {
-        Self::decode_with_cip112(rlp, Cip112TransitionHeight::from_global())
+        Self::decode_internal(rlp, Cip112TransitionHeight::try_from_global())
     }
 }
 
@@ -223,6 +229,12 @@ impl Block {
     /// Decode a block using an explicit CIP-112 transition height.
     pub fn decode_with_cip112(
         rlp: &Rlp, transition_height: Cip112TransitionHeight,
+    ) -> Result<Self, DecoderError> {
+        Self::decode_internal(rlp, Some(transition_height))
+    }
+
+    fn decode_internal(
+        rlp: &Rlp, transition_height: Option<Cip112TransitionHeight>,
     ) -> Result<Self, DecoderError> {
         if rlp.as_raw().len() != rlp.payload_info()?.total() {
             return Err(DecoderError::RlpIsTooBig);
@@ -240,7 +252,7 @@ impl Block {
         }
 
         Ok(Block::new_with_rlp_size(
-            BlockHeader::decode_with_cip112(&rlp.at(0)?, transition_height)?,
+            BlockHeader::decode_internal(&rlp.at(0)?, transition_height)?,
             signed_transactions,
             Some(rlp.as_raw().len()),
             None,
@@ -371,7 +383,7 @@ impl Encodable for CompactBlock {
 
 impl Decodable for CompactBlock {
     fn decode(rlp: &Rlp) -> Result<Self, DecoderError> {
-        Self::decode_with_cip112(rlp, Cip112TransitionHeight::from_global())
+        Self::decode_internal(rlp, Cip112TransitionHeight::try_from_global())
     }
 }
 
@@ -379,6 +391,12 @@ impl CompactBlock {
     /// Decode a compact block using an explicit CIP-112 transition height.
     pub fn decode_with_cip112(
         rlp: &Rlp, transition_height: Cip112TransitionHeight,
+    ) -> Result<Self, DecoderError> {
+        Self::decode_internal(rlp, Some(transition_height))
+    }
+
+    fn decode_internal(
+        rlp: &Rlp, transition_height: Option<Cip112TransitionHeight>,
     ) -> Result<Self, DecoderError> {
         let short_ids: Vec<u8> = rlp.val_at(2)?;
         if !short_ids
@@ -388,7 +406,7 @@ impl CompactBlock {
             return Err(DecoderError::Custom("Compact Block length Error!"));
         }
         Ok(CompactBlock {
-            block_header: BlockHeader::decode_with_cip112(
+            block_header: BlockHeader::decode_internal(
                 &rlp.at(0)?,
                 transition_height,
             )?,
