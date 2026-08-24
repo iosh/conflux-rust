@@ -21,6 +21,17 @@ pub enum LocalValidationMode {
     MaybeLater,
 }
 
+/// Result of checking a transaction under the local packing rules.
+#[derive(Copy, Clone)]
+pub enum PackingCheckResult {
+    /// Passes packing checks at the current height.
+    Pack,
+    /// Fails current packing checks but passes `MaybeLater` checks.
+    Pending,
+    /// Fails both current packing checks and `MaybeLater` checks.
+    Drop,
+}
+
 /// Validation mode used by transaction admission and block synchronization.
 #[derive(Copy, Clone)]
 pub enum ValidationMode<'a> {
@@ -148,6 +159,75 @@ pub fn validate_transaction_common(
     check_gas_limit(tx, cip76, eip7623, mode)?;
     check_gas_limit_with_calldata(tx, cip130)?;
     check_canonical_rlp(tx, cip172, mode)
+}
+
+/// Check height-dependent rules before selecting a transaction for packing.
+///
+/// The caller remains responsible for validation that does not depend on the
+/// current height.
+pub fn check_transaction_for_packing(
+    tx: &TransactionWithSignature, height: BlockHeight,
+    transitions: &TransitionsEpochHeight, transaction_epoch_bound: u64,
+    spec: &Spec,
+) -> PackingCheckResult {
+    let passes_packing_checks = |mode: &ValidationMode<'_>| {
+        let cip90a = height >= transitions.cip90a;
+        let cip1559 = height >= transitions.cip1559;
+        let cip7702 = height >= transitions.cip7702;
+        let cip645 = height >= transitions.cip645;
+
+        if !check_eip1559_transaction(tx, cip1559, mode) {
+            log::trace!(
+                "check_transaction_for_packing: EIP-1559 check failed at height {} txhash={:?}",
+                height,
+                tx.hash()
+            );
+            return false;
+        }
+
+        if !check_eip7702_transaction(tx, cip7702, mode) {
+            log::trace!(
+                "check_transaction_for_packing: EIP-7702 check failed at height {} txhash={:?}",
+                height,
+                tx.hash()
+            );
+            return false;
+        }
+
+        if !check_eip3860(tx, cip645) {
+            log::trace!(
+                "check_transaction_for_packing: EIP-3860 check failed at height {} txhash={:?}",
+                height,
+                tx.hash()
+            );
+            return false;
+        }
+
+        if let Transaction::Native(ref native_tx) = tx.unsigned {
+            verify_transaction_epoch_height(
+                native_tx,
+                height,
+                transaction_epoch_bound,
+                mode,
+            )
+            .is_ok()
+        } else {
+            check_eip155_transaction(tx, cip90a, mode)
+        }
+    };
+
+    let packing_mode = ValidationMode::Local(LocalValidationMode::Full, spec);
+    let pool_mode =
+        ValidationMode::Local(LocalValidationMode::MaybeLater, spec);
+
+    match (
+        passes_packing_checks(&packing_mode),
+        passes_packing_checks(&pool_mode),
+    ) {
+        (true, _) => PackingCheckResult::Pack,
+        (false, true) => PackingCheckResult::Pending,
+        (false, false) => PackingCheckResult::Drop,
+    }
 }
 
 pub fn check_transaction_epoch_bound(

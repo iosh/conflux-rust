@@ -11,7 +11,8 @@ use crate::{
     sync::Error as SyncError,
 };
 pub use cfx_executor::transaction_validation::{
-    LocalValidationMode as VerifyTxLocalMode, ValidationMode as VerifyTxMode,
+    LocalValidationMode as VerifyTxLocalMode, PackingCheckResult,
+    ValidationMode as VerifyTxMode,
 };
 use cfx_executor::{
     machine::Machine, spec::TransitionsEpochHeight,
@@ -31,7 +32,7 @@ use primitives::{
         native_transaction::TypedNativeTransaction, TransactionError,
     },
     Block, BlockHeader, BlockReceipts, MerkleHash, Receipt, SignedTransaction,
-    Transaction, TransactionWithSignature,
+    TransactionWithSignature,
 };
 use rlp::Encodable;
 use rlp_derive::{RlpDecodable, RlpEncodable};
@@ -654,73 +655,17 @@ impl VerificationConfig {
         )
     }
 
-    fn fast_recheck_inner<F>(spec: &Spec, f: F) -> (bool, bool)
-    where F: Fn(&VerifyTxMode) -> bool {
-        let tx_pool_mode =
-            VerifyTxMode::Local(VerifyTxLocalMode::MaybeLater, spec);
-        let packing_mode = VerifyTxMode::Local(VerifyTxLocalMode::Full, spec);
-
-        (f(&packing_mode), f(&tx_pool_mode))
-    }
-
     pub fn fast_recheck(
         &self, tx: &TransactionWithSignature, height: BlockHeight,
         transitions: &TransitionsEpochHeight, spec: &Spec,
     ) -> PackingCheckResult {
-        let cip90a = height >= transitions.cip90a;
-        let cip1559 = height >= transitions.cip1559;
-        let cip7702 = height >= transitions.cip7702;
-        let cip645 = height >= transitions.cip645;
-
-        let (can_pack, later_pack) = Self::fast_recheck_inner(
+        transaction::check_transaction_for_packing(
+            tx,
+            height,
+            transitions,
+            self.transaction_epoch_bound,
             spec,
-            |mode: &VerifyTxMode| {
-                if !transaction::check_eip1559_transaction(tx, cip1559, mode) {
-                    trace!(
-                        "fast_recheck: EIP-1559 transaction check failed at height {} txhash={:?}",
-                        height,
-                        tx.hash()
-                    );
-                    return false;
-                }
-
-                if !transaction::check_eip7702_transaction(tx, cip7702, mode) {
-                    trace!(
-                        "fast_recheck: EIP-7702 transaction check failed at height {} txhash={:?}",
-                        height,
-                        tx.hash()
-                    );
-                    return false;
-                }
-
-                if !transaction::check_eip3860(tx, cip645) {
-                    trace!(
-                        "fast_recheck: EIP-3860 transaction check failed at height {} txhash={:?}",
-                        height,
-                        tx.hash()
-                    );
-                    return false;
-                }
-
-                if let Transaction::Native(ref tx) = tx.unsigned {
-                    transaction::verify_transaction_epoch_height(
-                        tx,
-                        height,
-                        self.transaction_epoch_bound,
-                        mode,
-                    )
-                    .is_ok()
-                } else {
-                    transaction::check_eip155_transaction(tx, cip90a, mode)
-                }
-            },
-        );
-
-        match (can_pack, later_pack) {
-            (true, _) => PackingCheckResult::Pack,
-            (false, true) => PackingCheckResult::Pending,
-            (false, false) => PackingCheckResult::Drop,
-        }
+        )
     }
 
     // Packing transactions, verifying transaction in sync graph and inserting
@@ -751,15 +696,6 @@ impl VerificationConfig {
             Ok(())
         }
     }
-}
-
-#[derive(Copy, Clone)]
-pub enum PackingCheckResult {
-    Pack,
-    // Transaction can be packed.
-    Pending,
-    // Transaction may be ready to packed in the future.
-    Drop, // Transaction can never be packed.
 }
 
 #[cfg(test)]
