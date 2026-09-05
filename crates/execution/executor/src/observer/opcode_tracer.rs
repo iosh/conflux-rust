@@ -1,3 +1,4 @@
+use crate::state::State;
 use cfx_types::{Address, Space, H256, U256};
 use cfx_vm_types::InterpreterInfo;
 
@@ -22,12 +23,17 @@ pub trait OpcodeTracer {
     /// Called after `step` when the instruction has been executed.
     fn step_end(&mut self, interp: &dyn InterpreterInfo) { let _ = interp; }
 
-    /// Called when a log is emitted.
+    /// Called when a VM log is emitted, before its frame is committed.
+    /// The state is borrowed only for the duration of this callback.
     #[inline]
-    fn log(&mut self, address: &Address, topics: &Vec<H256>, data: &[u8]) {
+    fn log(
+        &mut self, address: &Address, topics: &Vec<H256>, data: &[u8],
+        state: &State,
+    ) {
         let _ = address;
         let _ = topics;
         let _ = data;
+        let _ = state;
     }
 
     /// Called when a contract has been self-destructed with funds transferred

@@ -55,6 +55,7 @@ pub use self::{
     commit::StateCommitResult,
     pos::{distribute_pos_interest, update_pos_status},
     reward::initialize_cip137,
+    save::SavedState,
     sponsor::COMMISSION_PRIVILEGE_SPECIAL_KEY,
     staking::initialize_or_update_dao_voted_params,
 };

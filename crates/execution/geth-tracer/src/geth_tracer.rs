@@ -394,6 +394,7 @@ impl OpcodeTracer for GethTracer {
     fn log(
         &mut self, _address: &cfx_types::Address,
         topics: &Vec<cfx_types::H256>, data: &[u8],
+        _state: &cfx_executor::state::State,
     ) {
         if self.inner.config.record_logs {
             let trace_idx = self.inner.last_trace_idx();
