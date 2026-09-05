@@ -52,15 +52,18 @@ impl<'a> InternalRefContext<'a> {
         &mut self, params: &ActionParams, key: Vec<u8>, value: U256,
     ) -> vm::Result<()> {
         let receiver = params.address.with_space(params.space);
-        self.state
-            .set_storage(
-                &receiver,
-                key,
-                value,
-                params.storage_owner,
-                self.substate,
-            )
-            .map_err(|e| e.into())
+        let trace_key = key.clone();
+        let result = self.state.set_storage(
+            &receiver,
+            key,
+            value,
+            params.storage_owner,
+            self.substate,
+        );
+        if result.is_ok() {
+            self.tracer.trace_storage_write(receiver, &trace_key, value);
+        }
+        result.map_err(|e| e.into())
     }
 
     pub fn storage_at(

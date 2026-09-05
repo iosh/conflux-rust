@@ -189,15 +189,18 @@ impl<'a> ContextTrait for Context<'a> {
         if self.is_static_or_reentrancy() {
             Err(vm::Error::MutableCallInStaticContext)
         } else {
-            self.state
-                .set_storage(
-                    &receiver,
-                    key,
-                    value,
-                    self.origin.storage_owner,
-                    &mut self.substate,
-                )
-                .map_err(Into::into)
+            let trace_key = key.clone();
+            let result = self.state.set_storage(
+                &receiver,
+                key,
+                value,
+                self.origin.storage_owner,
+                &mut self.substate,
+            );
+            if result.is_ok() {
+                self.tracer.trace_storage_write(receiver, &trace_key, value);
+            }
+            result.map_err(Into::into)
         }
     }
 
