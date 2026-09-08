@@ -80,6 +80,34 @@ mod impls {
                 .and_then(|v| v.current_value.clone())
         }
 
+        /// Reads a balance, giving pending account values and deletions
+        /// precedence over the underlying storage.
+        ///
+        /// This read does not cache a partial account or infer account absence
+        /// from a zero balance.
+        ///
+        /// # Errors
+        ///
+        /// Returns an account decoding or storage read error.
+        pub fn get_account_balance(
+            &self, address: &AddressWithSpace,
+        ) -> Result<U256> {
+            let key = StorageKey::new_account_key(&address.address)
+                .with_space(address.space)
+                .to_key_bytes();
+            if let Some(entry) = self.accessed_entries.read().get(&key) {
+                return match &entry.current_value {
+                    None => Ok(U256::zero()),
+                    Some(raw) => Ok(Account::new_from_rlp(
+                        address.address,
+                        &rlp::Rlp::new(raw),
+                    )?
+                    .balance),
+                };
+            }
+            Ok(self.storage.get_account_balance(address)?)
+        }
+
         /// Update the accessed_entries while getting the value.
         pub(crate) fn get_raw(
             &self, key: StorageKeyWithSpace,
@@ -547,12 +575,13 @@ mod impls {
         StateTrait as StorageStateTrait,
     };
     use cfx_types::{
-        address_util::AddressUtil, Address, AddressWithSpace, Space,
+        address_util::AddressUtil, Address, AddressWithSpace, Space, U256,
     };
     use hashbrown::HashMap;
     use parking_lot::RwLock;
     use primitives::{
-        EpochId, SkipInputCheck, StorageKey, StorageKeyWithSpace, StorageLayout,
+        Account, EpochId, SkipInputCheck, StorageKey, StorageKeyWithSpace,
+        StorageLayout,
     };
     use std::{
         collections::{

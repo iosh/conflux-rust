@@ -9,4 +9,6 @@ edition = "2021"
 [dependencies]
 cfx-db-errors = { workspace = true }
 cfx-internal-common = { workspace = true }
+cfx-types = { workspace = true }
 primitives = { workspace = true }
+rlp = { workspace = true }
