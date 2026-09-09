@@ -131,7 +131,7 @@ impl State {
 pub fn initialize_or_update_dao_voted_params(
     state: &mut State, cip105: bool,
 ) -> DbResult<()> {
-    let vote_count = get_settled_param_vote_count(state).expect("db error");
+    let vote_count = get_settled_param_vote_count(state)?;
     debug!(
         "initialize_or_update_dao_voted_params: vote_count={:?}",
         vote_count
