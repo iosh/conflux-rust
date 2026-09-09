@@ -43,6 +43,9 @@ mod impls {
         /// modified key values.
         accessed_entries: RwLock<AccessedEntries>,
 
+        /// Account storage/code clears applied before later point writes.
+        account_clears: BTreeSet<AccountClear>,
+
         /// The underlying storage, The storage is updated only upon fn
         /// commit().
         storage: Box<dyn StorageStateTrait>,
@@ -52,6 +55,7 @@ mod impls {
         pub fn new(storage: Box<dyn StorageStateTrait>) -> Self {
             StateDb {
                 accessed_entries: Default::default(),
+                account_clears: BTreeSet::new(),
                 storage,
             }
         }
@@ -78,6 +82,10 @@ mod impls {
                 .read()
                 .get(key)
                 .and_then(|v| v.current_value.clone())
+        }
+
+        fn is_key_cleared(&self, key: StorageKeyWithSpace) -> bool {
+            AccountClear::contains_key(&self.account_clears, key)
         }
 
         /// Reads a balance, giving pending account values and deletions
@@ -124,7 +132,11 @@ mod impls {
                 if let Occupied(o) = &entry {
                     r = o.get().current_value.clone();
                 } else {
-                    r = self.storage.get(key)?.map(Into::into);
+                    r = if self.is_key_cleared(key) {
+                        None
+                    } else {
+                        self.storage.get(key)?.map(Into::into)
+                    };
                     entry.or_insert(EntryValue::new(r.clone()));
                 };
             };
@@ -146,6 +158,7 @@ mod impls {
             &mut self, key: StorageKeyWithSpace, value: Option<Box<[u8]>>,
         ) -> Result<()> {
             let key_bytes = key.to_key_bytes();
+            let key_was_cleared = self.is_key_cleared(key);
             let mut entry =
                 self.accessed_entries.get_mut().entry(key_bytes.clone());
             let value = value.map(Into::into);
@@ -161,7 +174,11 @@ mod impls {
 
                 // Vacant
                 &mut Vacant(_) => {
-                    let original_value = self.storage.get(key)?.map(Into::into);
+                    let original_value = if key_was_cleared {
+                        None
+                    } else {
+                        self.storage.get(key)?.map(Into::into)
+                    };
 
                     entry.or_insert(EntryValue::new_modified(
                         original_value,
@@ -205,6 +222,86 @@ mod impls {
             self.modify_single_value(key, None)
         }
 
+        /// Clears an account's storage entries and layout in its space.
+        ///
+        /// Later writes take precedence over the clear. Account metadata and
+        /// collateral accounting remain the caller's responsibility.
+        ///
+        /// # Errors
+        ///
+        /// Enumerating backends can fail while reading old entries. Deferred
+        /// backend errors surface when changes are applied; a failed candidate
+        /// must be discarded.
+        pub fn clear_account_storage(
+            &mut self, address: &AddressWithSpace,
+            debug_record: Option<&mut ComputeEpochDebugRecord>,
+        ) -> Result<()> {
+            self.clear_account_data(
+                AccountClear::Storage(*address),
+                debug_record,
+            )
+        }
+
+        /// Clears all code records belonging to an account in its space.
+        ///
+        /// Later code writes take precedence over the clear. Updating the
+        /// account's code hash and settling collateral remain the caller's
+        /// responsibility.
+        ///
+        /// # Errors
+        ///
+        /// Enumerating backends can fail while reading old entries. Deferred
+        /// backend errors surface when changes are applied; a failed candidate
+        /// must be discarded.
+        pub fn clear_account_code(
+            &mut self, address: &AddressWithSpace,
+            debug_record: Option<&mut ComputeEpochDebugRecord>,
+        ) -> Result<()> {
+            self.clear_account_data(AccountClear::Code(*address), debug_record)
+        }
+
+        fn clear_account_data(
+            &mut self, clear: AccountClear,
+            debug_record: Option<&mut ComputeEpochDebugRecord>,
+        ) -> Result<()> {
+            let key_prefix = clear.key_prefix();
+            if self.storage.account_clear_mode() == AccountClearMode::Enumerate
+            {
+                return self
+                    .delete_all::<access_mode::Write>(key_prefix, debug_record)
+                    .map(|_| ());
+            }
+
+            let key_bytes = key_prefix.to_key_bytes();
+            if let Some(record) = debug_record {
+                record.state_ops.push(StateOp::StorageLevelOp {
+                    op_name: match clear {
+                        AccountClear::Storage(_) => "clear_account_storage",
+                        AccountClear::Code(_) => "clear_account_code",
+                    }
+                    .into(),
+                    key: key_bytes.clone(),
+                    maybe_value: None,
+                });
+            }
+
+            let upper_bound = to_key_prefix_iter_upper_bound(&key_bytes);
+            let accessed_entries = self.accessed_entries.get_mut();
+            let keys_to_remove: Vec<_> = accessed_entries
+                .range::<[u8], _>((
+                    Included(key_bytes.as_slice()),
+                    upper_bound.as_deref().map_or(Unbounded, Excluded),
+                ))
+                .map(|(key, _)| key.clone())
+                .collect();
+            for key in keys_to_remove {
+                accessed_entries.remove(&key);
+            }
+
+            self.account_clears.insert(clear);
+            Ok(())
+        }
+
         pub fn read_all(
             &mut self, key_prefix: StorageKeyWithSpace,
             debug_record: Option<&mut ComputeEpochDebugRecord>,
@@ -212,17 +309,79 @@ mod impls {
             self.delete_all::<access_mode::Read>(key_prefix, debug_record)
         }
 
+        /// Visits the effective view, including pending writes and deletions.
+        ///
+        /// Backend entries shadowed by local entries or account clears are
+        /// omitted. Values are passed to the callback without collecting the
+        /// complete range first.
+        ///
+        /// # Errors
+        ///
+        /// Returns a storage error if the remaining backend range cannot be
+        /// read. The callback may already have received entries on failure.
         pub fn read_all_with_callback(
             &mut self, access_key_prefix: StorageKeyWithSpace,
             callback: &mut dyn FnMut(MptKeyValue), only_account_key: bool,
         ) -> Result<()> {
-            self.storage
-                .read_all_with_callback(
+            let range_was_cleared = self.is_key_cleared(access_key_prefix);
+            let key_bytes = access_key_prefix.to_key_bytes();
+            let account_clears = &self.account_clears;
+            let accessed_entries = self.accessed_entries.get_mut();
+
+            if !range_was_cleared {
+                self.storage.read_all_with_callback(
                     access_key_prefix,
-                    callback,
+                    &mut |(key, value)| {
+                        if !key.starts_with(&key_bytes)
+                            || accessed_entries.contains_key(&key)
+                        {
+                            return;
+                        }
+                        if only_account_key || !account_clears.is_empty() {
+                            let storage_key =
+                                StorageKeyWithSpace::from_key_bytes::<
+                                    SkipInputCheck,
+                                >(&key);
+                            if (only_account_key
+                                && !matches!(
+                                    storage_key.key,
+                                    StorageKey::AccountKey(_)
+                                ))
+                                || AccountClear::contains_key(
+                                    account_clears,
+                                    storage_key,
+                                )
+                            {
+                                return;
+                            }
+                        }
+                        callback((key, value));
+                    },
                     only_account_key,
-                )
-                .map_err(|err| err.into())
+                )?;
+            }
+
+            let upper_bound = to_key_prefix_iter_upper_bound(&key_bytes);
+            for (key, entry) in accessed_entries.range::<[u8], _>((
+                Included(key_bytes.as_slice()),
+                upper_bound.as_deref().map_or(Unbounded, Excluded),
+            )) {
+                if let Some(value) = &entry.current_value {
+                    if only_account_key
+                        && !matches!(
+                            StorageKeyWithSpace::from_key_bytes::<SkipInputCheck>(
+                                key,
+                            )
+                            .key,
+                            StorageKey::AccountKey(_)
+                        )
+                    {
+                        continue;
+                    }
+                    callback((key.clone(), (&**value).into()));
+                }
+            }
+            Ok(())
         }
 
         pub fn delete_all<AM: access_mode::AccessMode>(
@@ -230,6 +389,7 @@ mod impls {
             debug_record: Option<&mut ComputeEpochDebugRecord>,
         ) -> Result<Vec<MptKeyValue>> {
             let key_bytes = key_prefix.to_key_bytes();
+            let range_was_cleared = self.is_key_cleared(key_prefix);
             if let Some(record) = debug_record {
                 record.state_ops.push(StateOp::StorageLevelOp {
                     op_name: if AM::READ_ONLY {
@@ -242,6 +402,7 @@ mod impls {
                     maybe_value: None,
                 })
             }
+            let account_clears = &self.account_clears;
             let accessed_entries = self.accessed_entries.get_mut();
             // First, all new keys in the subtree shall be deleted.
             let iter_range_upper_bound =
@@ -272,10 +433,24 @@ mod impls {
                 }
             }
             // Then, remove all un-modified existing keys.
-            let deleted = self.storage.read_all(key_prefix)?;
+            let deleted = if range_was_cleared {
+                None
+            } else {
+                self.storage.read_all(key_prefix)?
+            };
             // We must update the accessed_entries.
             if let Some(storage_deleted) = &deleted {
                 for (k, v) in storage_deleted {
+                    if !account_clears.is_empty()
+                        && AccountClear::contains_key(
+                            account_clears,
+                            StorageKeyWithSpace::from_key_bytes::<SkipInputCheck>(
+                                k,
+                            ),
+                        )
+                    {
+                        continue;
+                    }
                     let entry = accessed_entries.entry(k.clone());
                     let was_vacant = if let Occupied(_) = &entry {
                         // Nothing to do for existing entry, because we have
@@ -428,6 +603,17 @@ mod impls {
         fn apply_changes_to_storage(
             &mut self, mut debug_record: Option<&mut ComputeEpochDebugRecord>,
         ) -> Result<()> {
+            for clear in &self.account_clears {
+                match clear {
+                    AccountClear::Storage(address) => {
+                        self.storage.clear_account_storage(address)?
+                    }
+                    AccountClear::Code(address) => {
+                        self.storage.clear_account_code(address)?
+                    }
+                }
+            }
+
             let mut storage_layouts_to_rewrite = Default::default();
             let accessed_entries = &*self.accessed_entries.get_mut();
             // First of all, apply all changes to the underlying storage.
@@ -508,6 +694,7 @@ mod impls {
             }
             // Mark all modification applied.
             self.accessed_entries = Default::default();
+            self.account_clears.clear();
             Ok(())
         }
 
@@ -536,6 +723,53 @@ mod impls {
             self.storage.commit(epoch_id)?;
 
             Ok(result)
+        }
+    }
+
+    #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+    enum AccountClear {
+        Storage(AddressWithSpace),
+        Code(AddressWithSpace),
+    }
+
+    impl AccountClear {
+        fn contains_key(
+            clears: &BTreeSet<Self>, key: StorageKeyWithSpace,
+        ) -> bool {
+            if clears.is_empty() {
+                return false;
+            }
+            let clear = match key.key {
+                StorageKey::StorageRootKey(address_bytes)
+                | StorageKey::StorageKey { address_bytes, .. } => {
+                    Self::Storage(AddressWithSpace {
+                        address: Address::from_slice(address_bytes),
+                        space: key.space,
+                    })
+                }
+                StorageKey::CodeRootKey(address_bytes)
+                | StorageKey::CodeKey { address_bytes, .. } => {
+                    Self::Code(AddressWithSpace {
+                        address: Address::from_slice(address_bytes),
+                        space: key.space,
+                    })
+                }
+                _ => return false,
+            };
+            clears.contains(&clear)
+        }
+
+        fn key_prefix(&self) -> StorageKeyWithSpace<'_> {
+            match self {
+                Self::Storage(address) => {
+                    StorageKey::new_storage_root_key(&address.address)
+                        .with_space(address.space)
+                }
+                Self::Code(address) => {
+                    StorageKey::new_code_root_key(&address.address)
+                        .with_space(address.space)
+                }
+            }
         }
     }
 
@@ -571,8 +805,8 @@ mod impls {
         StateRootWithAuxInfo,
     };
     use cfx_storage_types::{
-        access_mode, to_key_prefix_iter_upper_bound, MptKeyValue,
-        StateTrait as StorageStateTrait,
+        access_mode, to_key_prefix_iter_upper_bound, AccountClearMode,
+        MptKeyValue, StateTrait as StorageStateTrait,
     };
     use cfx_types::{
         address_util::AddressUtil, Address, AddressWithSpace, Space, U256,
@@ -586,7 +820,7 @@ mod impls {
     use std::{
         collections::{
             btree_map::Entry::{Occupied, Vacant},
-            BTreeMap,
+            BTreeMap, BTreeSet,
         },
         ops::Bound::{Excluded, Included, Unbounded},
         sync::Arc,

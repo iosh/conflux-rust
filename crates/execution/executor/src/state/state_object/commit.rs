@@ -4,7 +4,7 @@ use super::State;
 use cfx_internal_common::{
     debug::ComputeEpochDebugRecord, StateRootWithAuxInfo,
 };
-use cfx_statedb::{access_mode, Result as DbResult};
+use cfx_statedb::Result as DbResult;
 use cfx_types::AddressWithSpace;
 use primitives::{Account, EpochId, StorageKey};
 
@@ -92,16 +92,10 @@ impl State {
     ) -> DbResult<()> {
         // TODO: Think about kill_dust and collateral refund.
         for address in &killed_addresses {
-            self.db.delete_all::<access_mode::Write>(
-                StorageKey::new_storage_root_key(&address.address)
-                    .with_space(address.space),
-                debug_record.as_deref_mut(),
-            )?;
-            self.db.delete_all::<access_mode::Write>(
-                StorageKey::new_code_root_key(&address.address)
-                    .with_space(address.space),
-                debug_record.as_deref_mut(),
-            )?;
+            self.db
+                .clear_account_storage(address, debug_record.as_deref_mut())?;
+            self.db
+                .clear_account_code(address, debug_record.as_deref_mut())?;
             self.db.delete(
                 StorageKey::new_account_key(&address.address)
                     .with_space(address.space),
