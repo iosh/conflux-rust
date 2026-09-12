@@ -28,8 +28,8 @@ use cfx_internal_common::{
 use cfx_parameters::consensus::*;
 use cfx_statedb::{Result as DbResult, StateDb};
 use cfx_storage::{
-    defaults::DEFAULT_EXECUTION_PREFETCH_THREADS, StateIndex,
-    StorageManagerTrait,
+    defaults::DEFAULT_EXECUTION_PREFETCH_THREADS, state::StateTrait,
+    StateIndex, StorageManagerTrait,
 };
 use cfx_types::{
     AddressSpaceUtil, AllChainID, BigEndianHash, Space, H160, H256,
@@ -37,7 +37,7 @@ use cfx_types::{
 };
 use metrics::{register_meter_with_group, Meter, MeterTimer};
 use primitives::{
-    compute_block_number, receipt::BlockReceipts, Block, BlockHeader,
+    compute_block_number, receipt::BlockReceipts, Account, Block, BlockHeader,
     BlockHeaderBuilder, SignedTransaction, MERKLE_NULL_NODE,
 };
 
@@ -64,9 +64,7 @@ use cfx_execute_helper::estimation::{
 use cfx_executor::{
     executive::{ExecutionOutcome, ExecutiveContext},
     machine::Machine,
-    state::{
-        distribute_pos_interest, update_pos_status, State, StateCommitResult,
-    },
+    state::{distribute_pos_interest, update_pos_status, State},
 };
 use cfx_vm_types::{Env, Spec};
 use geth_tracer::GethTraceWithHash;
@@ -86,6 +84,11 @@ lazy_static! {
         );
     static ref GOOD_TPS_METER: Arc<dyn Meter> =
         register_meter_with_group("system_metrics", "good_tps");
+}
+
+struct StateCommitResult {
+    state_root: StateRootWithAuxInfo,
+    accounts_for_txpool: Vec<Account>,
 }
 
 /// The RewardExecutionInfo struct includes most information to compute rewards
@@ -920,10 +923,10 @@ impl ConsensusExecutionHandler {
             .get_epoch_execution_commitment_with_db(epoch_hash)
     }
 
-    fn new_state(
+    fn new_storage(
         &self, pivot_block: &Block,
         recover_mpt_during_construct_pivot_state: bool,
-    ) -> DbResult<State> {
+    ) -> Box<dyn StateTrait> {
         let state_root_with_aux_info = &self
             .data_man
             .get_epoch_execution_commitment(
@@ -940,8 +943,7 @@ impl ConsensusExecutionHandler {
             self.data_man.get_snapshot_epoch_count(),
         );
 
-        let storage = self
-            .data_man
+        self.data_man
             .storage_manager
             .get_state_for_next_epoch(
                 state_index,
@@ -949,10 +951,7 @@ impl ConsensusExecutionHandler {
             )
             .expect("No db error")
             // Unwrapping is safe because the state exists.
-            .expect("State exists");
-
-        let state_db = StateDb::new(storage);
-        State::new(state_db)
+            .expect("State exists")
     }
 
     pub fn epoch_executed_and_recovered(
@@ -1062,8 +1061,9 @@ impl ConsensusExecutionHandler {
             epoch_blocks.len(),
         );
 
-        let mut state = self
-            .new_state(pivot_block, recover_mpt_during_construct_pivot_state)
+        let mut storage = self
+            .new_storage(pivot_block, recover_mpt_during_construct_pivot_state);
+        let mut state = State::new(StateDb::new(storage.as_mut()))
             .expect("Cannot init state");
 
         let epoch_receipts = self
@@ -1101,9 +1101,34 @@ impl ConsensusExecutionHandler {
         )
         .expect("db error");
 
-        let commit_result = state
-            .commit(*epoch_hash, debug_record.as_deref_mut())
+        debug!("Commit epoch[{}]", epoch_hash);
+        let accounts_for_txpool = state
+            .apply_changes_to_storage(debug_record.as_deref_mut())
             .expect(&concat!(file!(), ":", line!(), ":", column!()));
+        drop(state);
+
+        let state_root = match storage.get_state_root() {
+            Ok(root) => root,
+            Err(_) => storage.compute_state_root().expect(&concat!(
+                file!(),
+                ":",
+                line!(),
+                ":",
+                column!()
+            )),
+        };
+        storage.commit(*epoch_hash).expect(&concat!(
+            file!(),
+            ":",
+            line!(),
+            ":",
+            column!()
+        ));
+        drop(storage);
+        let commit_result = StateCommitResult {
+            state_root,
+            accounts_for_txpool,
+        };
 
         if on_local_pivot {
             self.notify_txpool(&commit_result, epoch_hash);
@@ -1576,7 +1601,8 @@ impl ConsensusExecutionHandler {
             epoch_blocks.len(),
         );
         let pivot_block = epoch_blocks.last().expect("Not empty");
-        let mut state = self.new_state(&pivot_block, false)?;
+        let storage = self.new_storage(pivot_block, false);
+        let mut state = State::new(StateDb::from_owned(storage))?;
         self.process_epoch_transactions(
             &mut state,
             &epoch_blocks,
@@ -1725,7 +1751,7 @@ impl ConsensusExecutionHandler {
 
     fn get_state_by_epoch_id_and_space(
         &self, epoch_id: &H256, epoch_height: u64, state_space: Option<Space>,
-    ) -> DbResult<State> {
+    ) -> DbResult<State<'static>> {
         let state_db = self.get_statedb_by_epoch_id_and_space(
             epoch_id,
             epoch_height,
@@ -1738,7 +1764,7 @@ impl ConsensusExecutionHandler {
 
     fn get_statedb_by_epoch_id_and_space(
         &self, epoch_id: &H256, epoch_height: u64, state_space: Option<Space>,
-    ) -> DbResult<StateDb> {
+    ) -> DbResult<StateDb<'static>> {
         // Keep the lock until we get the desired State, otherwise the State may
         // expire.
         let state_availability_boundary =
@@ -1757,7 +1783,7 @@ impl ConsensusExecutionHandler {
             .get_state_readonly_index(epoch_id)
             .expect("state index should exist");
 
-        let state_db = StateDb::new(
+        let state_db = StateDb::from_owned(
             self.data_man
                 .storage_manager
                 .get_state_no_commit(

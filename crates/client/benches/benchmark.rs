@@ -72,7 +72,7 @@ fn txexe_benchmark(c: &mut Criterion) {
     let mut group = c.benchmark_group("Execute 1 transaction");
     group
         .bench_function("Execute 1 transaction", move |b| {
-            let mut state = State::new(StateDb::new(
+            let mut state = State::new(StateDb::from_owned(
                 handler
                     .other_components
                     .consensus

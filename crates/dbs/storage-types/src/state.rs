@@ -20,7 +20,10 @@ pub enum AccountClearMode {
     Deferred,
 }
 
-pub trait StateTrait: Sync + Send {
+/// State reads and writes used during execution.
+///
+/// Implementations need not compute a state root or commit an epoch.
+pub trait StateStorage: Sync + Send {
     /// Reads a balance without requiring the caller to load a complete account.
     ///
     /// The default implementation decodes the stored account. Backends with
@@ -119,7 +122,10 @@ pub trait StateTrait: Sync + Send {
     ) -> Result<()> {
         Err(Error::Msg("Not implemented".into()))
     }
+}
 
+/// State storage that can compute roots and commit epochs.
+pub trait StateTrait: StateStorage {
     // Finalize
     /// It's costly to compute state root however it's only necessary to compute
     /// state root once before committing.

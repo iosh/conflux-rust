@@ -32,8 +32,8 @@ use primitives::{
 };
 use std::{convert::TryInto, sync::Arc};
 
-pub(super) struct PreCheckedExecutive<'a, O: ExecutiveObserver> {
-    pub context: ExecutiveContext<'a>,
+pub(super) struct PreCheckedExecutive<'a, 'db, O: ExecutiveObserver> {
+    pub context: ExecutiveContext<'a, 'db>,
     pub tx: &'a SignedTransaction,
     pub observer: O,
     pub settings: TransactSettings,
@@ -41,7 +41,7 @@ pub(super) struct PreCheckedExecutive<'a, O: ExecutiveObserver> {
     pub substate: Substate,
 }
 
-impl<'a, O: ExecutiveObserver> PreCheckedExecutive<'a, O> {
+impl<'a, 'db, O: ExecutiveObserver> PreCheckedExecutive<'a, 'db, O> {
     pub(super) fn execute_transaction(mut self) -> DbResult<ExecutionOutcome> {
         let nonce_overflow = self.inc_sender_nonce()?;
         if nonce_overflow {
@@ -99,7 +99,7 @@ impl<'a, O: ExecutiveObserver> PreCheckedExecutive<'a, O> {
     }
 }
 
-impl<'a, O: ExecutiveObserver> PreCheckedExecutive<'a, O> {
+impl<'a, 'db, O: ExecutiveObserver> PreCheckedExecutive<'a, 'db, O> {
     fn inc_sender_nonce(&mut self) -> DbResult<bool> {
         self.context.state.inc_nonce(&self.tx.sender())
     }
@@ -271,7 +271,7 @@ impl<'a, O: ExecutiveObserver> PreCheckedExecutive<'a, O> {
 }
 
 pub(super) fn exec_vm<'a>(
-    context: &mut ExecutiveContext<'a>, params: ActionParams,
+    context: &mut ExecutiveContext<'a, '_>, params: ActionParams,
     tracer: &mut dyn TracerTrait,
 ) -> DbResult<FrameResult> {
     let main_frame = FreshFrame::new(
@@ -291,7 +291,7 @@ pub(super) fn exec_vm<'a>(
     exec_main_frame(main_frame, resources)
 }
 
-impl<'a, O: ExecutiveObserver> PreCheckedExecutive<'a, O> {
+impl<'a, 'db, O: ExecutiveObserver> PreCheckedExecutive<'a, 'db, O> {
     fn exec_vm(&mut self, params: ActionParams) -> DbResult<ExecutiveResult> {
         // No matter who pays the collateral, we only focuses on the storage
         // limit of sender.
@@ -593,7 +593,7 @@ impl<'a, O: ExecutiveObserver> PreCheckedExecutive<'a, O> {
     }
 }
 
-impl<'a, O: ExecutiveObserver> PreCheckedExecutive<'a, O> {
+impl<'a, 'db, O: ExecutiveObserver> PreCheckedExecutive<'a, 'db, O> {
     fn finalize_on_nonce_overflow(
         self, address: Address,
     ) -> DbResult<ExecutionOutcome> {
@@ -685,7 +685,7 @@ impl<'a, O: ExecutiveObserver> PreCheckedExecutive<'a, O> {
     }
 }
 
-impl<'a, O: ExecutiveObserver> PreCheckedExecutive<'a, O> {
+impl<'a, 'db, O: ExecutiveObserver> PreCheckedExecutive<'a, 'db, O> {
     fn process_cip7702_authorization(&mut self) -> DbResult<u64> {
         let Some(authorization_list) = self.tx.authorization_list() else {
             return Ok(0);

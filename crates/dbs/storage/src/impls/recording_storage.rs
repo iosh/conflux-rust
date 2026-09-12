@@ -43,7 +43,7 @@ impl<Storage: StateTrait + StateTraitExt> RecordingStorage<Storage> {
     }
 }
 
-impl<Storage: StateTrait + StateTraitExt> StateTrait
+impl<Storage: StateTrait + StateTraitExt> StateStorage
     for RecordingStorage<Storage>
 {
     delegate! {
@@ -51,9 +51,6 @@ impl<Storage: StateTrait + StateTraitExt> StateTrait
             fn set(&mut self, access_key: StorageKeyWithSpace, value: Box<[u8]>) -> Result<()>;
             fn delete(&mut self, access_key: StorageKeyWithSpace) -> Result<()>;
             fn delete_test_only(&mut self, access_key: StorageKeyWithSpace) -> Result<Option<Box<[u8]>>>;
-            fn compute_state_root(&mut self) -> Result<StateRootWithAuxInfo>;
-            fn get_state_root(&self) -> Result<StateRootWithAuxInfo>;
-            fn commit(&mut self, epoch_id: EpochId) -> Result<StateRootWithAuxInfo>;
             fn read_all_with_callback(&mut self, access_key_prefix: StorageKeyWithSpace, callback: &mut dyn FnMut(MptKeyValue), only_account_key: bool) -> Result<()>;
         }
     }
@@ -88,6 +85,18 @@ impl<Storage: StateTrait + StateTraitExt> StateTrait
                 self.record_kvs(&kvs)?;
                 Ok(Some(kvs))
             }
+        }
+    }
+}
+
+impl<Storage: StateTrait + StateTraitExt> StateTrait
+    for RecordingStorage<Storage>
+{
+    delegate! {
+        to self.storage {
+            fn compute_state_root(&mut self) -> Result<StateRootWithAuxInfo>;
+            fn get_state_root(&self) -> Result<StateRootWithAuxInfo>;
+            fn commit(&mut self, epoch_id: EpochId) -> Result<StateRootWithAuxInfo>;
         }
     }
 }

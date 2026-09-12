@@ -72,9 +72,9 @@ impl<'a> FrameLocal<'a> {
     /// visible to others.
     /// 2. Runtime resources - Contains global information like the ledger
     /// state, accessible across frames.
-    pub fn make_vm_context<'b, 'c>(
-        &'b mut self, resources: &'b mut RuntimeRes<'c>,
-    ) -> Context<'b> {
+    pub fn make_vm_context<'b, 'c, 'db>(
+        &'b mut self, resources: &'b mut RuntimeRes<'c, 'db>,
+    ) -> Context<'b, 'db> {
         Context::new(self, resources)
     }
 }

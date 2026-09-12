@@ -1661,7 +1661,7 @@ impl TxReplayer {
     }
 
     pub fn commit(
-        &self, latest_state: &mut StateDb, txs: u64, ops: u64,
+        &self, storage: &mut dyn StateTrait, txs: u64, ops: u64,
     ) -> errors::Result<StateRootWithAuxInfo> {
         let block_height = self.block_height.get();
         warn!(
@@ -1669,10 +1669,9 @@ impl TxReplayer {
             txs, ops, block_height
         );
 
-        let state_root_with_aux =
-            latest_state.compute_state_root(None).unwrap();
+        let state_root_with_aux = storage.compute_state_root().unwrap();
         let epoch_id = state_root_with_aux.state_root.delta_root;
-        latest_state.commit(epoch_id, None).unwrap();
+        storage.commit(epoch_id).unwrap();
         {
             let mut state_availability_boundary_mut =
                 self.state_availability_boundary.write();
@@ -1722,8 +1721,7 @@ impl TxReplayer {
 
     // FIXME: use and test performance with ExecutionStatePrefetcher
     pub fn add_tx(
-        &self, tx: RealizedEthTx, latest_state: &mut StateDb,
-        last_state_root: &mut StateRootWithAuxInfo,
+        &self, tx: RealizedEthTx, latest_state: &mut StateDb<'_>,
     ) -> errors::Result<()>
     {
         if let Some(sender) = tx.sender {
@@ -1827,27 +1825,6 @@ impl TxReplayer {
         }
 
         self.tx_counts.set(self.tx_counts.get() + 1);
-        if self.tx_counts.get() % Self::EPOCH_TXS == 0 {
-            *last_state_root = self.commit(
-                latest_state,
-                self.tx_counts.get(),
-                self.ops_counts.get(),
-            )?;
-            *latest_state = StateDb::new(
-                self.storage_manager
-                    .get_state_for_next_epoch(StateIndex::new_for_next_epoch(
-                        &last_state_root.state_root.delta_root,
-                        &last_state_root,
-                        self.block_height.get() as u64,
-                        self.storage_manager
-                            .get_storage_manager()
-                            .get_snapshot_epoch_count(),
-                    ))
-                    .unwrap()
-                    .unwrap(),
-            );
-        }
-
         Ok(())
     }
 }
@@ -1869,22 +1846,19 @@ fn tx_replay(matches: ArgMatches) -> errors::Result<()> {
         Some(value) => Some(value.parse::<usize>().unwrap()),
     };
 
-    let mut latest_state;
+    let mut storage;
     let mut last_state_root;
 
     if matches.occurrences_of("reset_db") > 0 {
         last_state_root = StateRootWithAuxInfo::genesis(&MERKLE_NULL_NODE);
-        latest_state = StateDb::new(
-            tx_replayer.storage_manager.get_state_for_genesis_write(),
-        );
+        storage = tx_replayer.storage_manager.get_state_for_genesis_write();
     } else {
         match matches.value_of("last_epoch_number") {
             None => {
                 last_state_root =
                     StateRootWithAuxInfo::genesis(&MERKLE_NULL_NODE);
-                latest_state = StateDb::new(
-                    tx_replayer.storage_manager.get_state_for_genesis_write(),
-                );
+                storage =
+                    tx_replayer.storage_manager.get_state_for_genesis_write();
             }
             Some(state_to_load) => {
                 let block_height = state_to_load.parse::<i64>()?;
@@ -1895,26 +1869,27 @@ fn tx_replay(matches: ArgMatches) -> errors::Result<()> {
                         .get_with_number_key(block_height)?
                         .unwrap(),
                 )?;
-                latest_state = StateDb::new(
-                    tx_replayer
-                        .storage_manager
-                        .get_state_for_next_epoch(
-                            StateIndex::new_for_next_epoch(
-                                &last_state_root.state_root.delta_root,
-                                &last_state_root,
-                                block_height as u64,
-                                tx_replayer
-                                    .storage_manager
-                                    .get_storage_manager()
-                                    .get_snapshot_epoch_count(),
-                            ),
-                        )
-                        .unwrap()
-                        .unwrap(),
-                );
+                storage = tx_replayer
+                    .storage_manager
+                    .get_state_for_next_epoch(
+                        StateIndex::new_for_next_epoch(
+                            &last_state_root.state_root.delta_root,
+                            &last_state_root,
+                            block_height as u64,
+                            tx_replayer
+                                .storage_manager
+                                .get_storage_manager()
+                                .get_snapshot_epoch_count(),
+                        ),
+                        false,
+                    )
+                    .unwrap()
+                    .unwrap();
             }
         }
     }
+
+    let mut latest_state = StateDb::new(storage.as_mut());
 
     // Load block RLP from file.
     let mut rlp_file = File::open(matches.value_of("txs").unwrap())?;
@@ -2008,11 +1983,33 @@ fn tx_replay(matches: ArgMatches) -> errors::Result<()> {
                             .unwrap();
                     to_parse = &to_parse[rlp_len..];
 
-                    tx_replayer.add_tx(
-                        tx,
-                        &mut latest_state,
-                        &mut last_state_root,
-                    )?;
+                    tx_replayer.add_tx(tx, &mut latest_state)?;
+                    if tx_replayer.tx_counts.get() % TxReplayer::EPOCH_TXS == 0 {
+                        latest_state.apply_changes_to_storage(None).unwrap();
+                        drop(latest_state);
+                        last_state_root = tx_replayer.commit(
+                            storage.as_mut(),
+                            tx_replayer.tx_counts.get(),
+                            tx_replayer.ops_counts.get(),
+                        )?;
+                        storage = tx_replayer
+                            .storage_manager
+                            .get_state_for_next_epoch(
+                                StateIndex::new_for_next_epoch(
+                                    &last_state_root.state_root.delta_root,
+                                    &last_state_root,
+                                    tx_replayer.block_height.get() as u64,
+                                    tx_replayer
+                                        .storage_manager
+                                        .get_storage_manager()
+                                        .get_snapshot_epoch_count(),
+                                ),
+                                false,
+                            )
+                            .unwrap()
+                            .unwrap();
+                        latest_state = StateDb::new(storage.as_mut());
+                    }
                 }
             }
             Err(err) => {
@@ -2027,8 +2024,10 @@ fn tx_replay(matches: ArgMatches) -> errors::Result<()> {
             }
         }
     }
+    latest_state.apply_changes_to_storage(None).unwrap();
+    drop(latest_state);
     last_state_root = tx_replayer.commit(
-        &mut latest_state,
+        storage.as_mut(),
         tx_replayer.tx_counts.get(),
         tx_replayer.ops_counts.get(),
     )?;
@@ -2165,6 +2164,7 @@ use cfx_internal_common::{
 };
 use cfx_statedb::{StateDb, StateDbExt};
 use cfx_storage::{
+    state::StateTrait,
     storage_db::key_value_db::{KeyValueDbTrait, KeyValueDbTraitRead},
     utils::StateRootWithAuxInfoToFromRlpBytes,
     KvdbSqlite, KvdbSqliteStatements, StateIndex, StorageConfiguration,

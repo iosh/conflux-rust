@@ -12,11 +12,11 @@ use cfx_vm_types::{self as vm, ActionParams, Env, Spec};
 /// `foo(env, spec)`. But `foo(context.env(), context.spec())` will incur
 /// lifetime issue. The `InternalRefContext` contains the parameters required by
 /// the internal contracts.
-pub struct InternalRefContext<'a> {
+pub struct InternalRefContext<'a, 'db> {
     pub env: &'a Env,
     pub spec: &'a Spec,
     pub callstack: &'a mut CallStackInfo,
-    pub state: &'a mut State,
+    pub state: &'a mut State<'db>,
     pub substate: &'a mut Substate,
     pub tracer: &'a mut dyn TracerTrait,
     pub static_flag: bool,
@@ -26,7 +26,7 @@ pub struct InternalRefContext<'a> {
 // The following implementation is copied from `executive/context.rs`. I know
 // it is not a good idea to implement the context interface again. We put it
 // here temporarily.
-impl<'a> InternalRefContext<'a> {
+impl<'a, 'db> InternalRefContext<'a, 'db> {
     pub fn log(
         &mut self, params: &ActionParams, spec: &Spec, topics: Vec<H256>,
         data: Vec<u8>,

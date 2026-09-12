@@ -6,9 +6,9 @@ use cfx_types::{AddressWithSpace, Space};
 
 /// Apply the state override to the state object, only used for rpc call eg
 /// eth_call, eth_estimateGas etc.
-impl State {
+impl<'db> State<'db> {
     pub fn new_with_override(
-        db: StateDb, state_override: &StateOverride, space: Space,
+        db: StateDb<'db>, state_override: &StateOverride, space: Space,
     ) -> DbResult<Self> {
         let mut state = Self::new(db)?;
         state.apply_override(state_override, space)?;

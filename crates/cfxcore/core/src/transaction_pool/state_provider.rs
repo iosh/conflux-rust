@@ -7,11 +7,11 @@ use primitives::SponsorInfo;
 use std::sync::Arc;
 
 pub struct StateProvider {
-    state: Arc<State>,
+    state: Arc<State<'static>>,
 }
 
 impl StateProvider {
-    pub fn new(state: Arc<State>) -> Self { StateProvider { state } }
+    pub fn new(state: Arc<State<'static>>) -> Self { StateProvider { state } }
 
     pub fn get_nonce_and_balance(
         &self, address: &AddressWithSpace,

@@ -9,7 +9,7 @@ use cfx_vm_types::{self as vm, ReturnData};
 /// resources accordingly.
 pub(super) fn process_return<'a>(
     frame_local: FrameLocal<'a>, result: vm::Result<FinalizationResult>,
-    resources: &mut RuntimeRes<'a>,
+    resources: &mut RuntimeRes<'a, '_>,
 ) -> FrameResult {
     let is_create = frame_local.create_address.is_some();
     let frame_result =

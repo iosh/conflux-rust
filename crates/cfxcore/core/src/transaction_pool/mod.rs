@@ -174,7 +174,7 @@ pub struct TransactionPool {
     inner: RwLock<TransactionPoolInner>,
     to_propagate_trans: Arc<RwLock<HashMap<H256, Arc<SignedTransaction>>>>,
     pub data_man: Arc<BlockDataManager>,
-    best_executed_state: Mutex<Arc<State>>,
+    best_executed_state: Mutex<Arc<State<'static>>>,
     consensus_best_info: Mutex<Arc<BestInformation>>,
     set_tx_requests: Mutex<Vec<Arc<SignedTransaction>>>,
     recycle_tx_requests: Mutex<Vec<Arc<SignedTransaction>>>,
@@ -1178,7 +1178,7 @@ impl TransactionPool {
 
     fn get_best_executed_state_by_epoch(
         data_man: &BlockDataManager, best_executed_epoch: StateIndex,
-    ) -> StateDbResult<Arc<State>> {
+    ) -> StateDbResult<Arc<State<'static>>> {
         let storage = data_man
             .storage_manager
             .get_state_no_commit(
@@ -1188,7 +1188,7 @@ impl TransactionPool {
             )?
             // Safe because the state is guaranteed to be available
             .unwrap();
-        let state_db = StateDb::new(storage);
+        let state_db = StateDb::from_owned(storage);
         let state = State::new(state_db)?;
         Ok(Arc::new(state))
     }

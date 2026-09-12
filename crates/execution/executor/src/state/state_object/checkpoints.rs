@@ -46,7 +46,7 @@ impl CheckpointLayerTrait for CheckpointLayer {
     }
 }
 
-impl State {
+impl State<'_> {
     /// Create a recoverable checkpoint of this state. Return the checkpoint
     /// index. The checkpoint records any old value which is alive at the
     /// creation time of the checkpoint and updated after that and before

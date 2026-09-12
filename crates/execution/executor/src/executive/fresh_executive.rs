@@ -27,8 +27,8 @@ macro_rules! early_return_on_err {
     };
 }
 
-pub struct FreshExecutive<'a, O: ExecutiveObserver> {
-    context: ExecutiveContext<'a>,
+pub struct FreshExecutive<'a, 'db, O: ExecutiveObserver> {
+    context: ExecutiveContext<'a, 'db>,
     tx: &'a SignedTransaction,
     observer: O,
     settings: TransactSettings,
@@ -65,9 +65,9 @@ pub(super) struct CostInfo {
     pub storage_sponsor_eligible: bool,
 }
 
-impl<'a, O: ExecutiveObserver> FreshExecutive<'a, O> {
+impl<'a, 'db, O: ExecutiveObserver> FreshExecutive<'a, 'db, O> {
     pub fn new(
-        context: ExecutiveContext<'a>, tx: &'a SignedTransaction,
+        context: ExecutiveContext<'a, 'db>, tx: &'a SignedTransaction,
         options: TransactOptions<O>,
     ) -> Self {
         let TransactOptions {
@@ -83,7 +83,8 @@ impl<'a, O: ExecutiveObserver> FreshExecutive<'a, O> {
 
     pub(super) fn check_all(
         self,
-    ) -> DbResult<Result<PreCheckedExecutive<'a, O>, ExecutionOutcome>> {
+    ) -> DbResult<Result<PreCheckedExecutive<'a, 'db, O>, ExecutionOutcome>>
+    {
         early_return_on_err!(self.check_base_price());
         // Validate transaction nonce
         early_return_on_err!(self.check_nonce()?);
@@ -108,7 +109,9 @@ impl<'a, O: ExecutiveObserver> FreshExecutive<'a, O> {
         Ok(Ok(self.into_pre_checked(cost)))
     }
 
-    fn into_pre_checked(self, cost: CostInfo) -> PreCheckedExecutive<'a, O> {
+    fn into_pre_checked(
+        self, cost: CostInfo,
+    ) -> PreCheckedExecutive<'a, 'db, O> {
         PreCheckedExecutive {
             context: self.context,
             tx: self.tx,
@@ -120,7 +123,7 @@ impl<'a, O: ExecutiveObserver> FreshExecutive<'a, O> {
     }
 }
 
-impl<'a, O: ExecutiveObserver> FreshExecutive<'a, O> {
+impl<'a, 'db, O: ExecutiveObserver> FreshExecutive<'a, 'db, O> {
     fn check_nonce(&self) -> DbResult<Result<(), ExecutionOutcome>> {
         let tx = self.tx;
         let nonce = self.context.state.nonce(&tx.sender())?;

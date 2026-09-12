@@ -20,7 +20,7 @@ use std::collections::{
 pub type AccountReadGuard<'a> = MappedRwLockReadGuard<'a, OverlayAccount>;
 pub type AccountWriteGuard<'a> = MappedRwLockWriteGuard<'a, OverlayAccount>;
 
-impl State {
+impl State<'_> {
     /// A convenience function of `read_account_ext_lock`
     pub(super) fn read_account_lock(
         &self, address: &AddressWithSpace,
@@ -106,7 +106,7 @@ impl State {
     }
 }
 
-impl State {
+impl State<'_> {
     /// A convenience function of `write_account_ext_lock`
     pub fn write_account_lock(
         &self, address: &AddressWithSpace,
@@ -197,7 +197,7 @@ impl State {
     }
 }
 
-impl State {
+impl State<'_> {
     /// Retrieves data using a read-through caching strategy and automatically
     /// loads extension fields as required.
     fn fetch_account_mut<'a>(

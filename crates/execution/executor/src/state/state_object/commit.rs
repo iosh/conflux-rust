@@ -1,41 +1,34 @@
 use crate::state::overlay_account::AccountEntry;
 
 use super::State;
-use cfx_internal_common::{
-    debug::ComputeEpochDebugRecord, StateRootWithAuxInfo,
-};
+use cfx_internal_common::debug::ComputeEpochDebugRecord;
 use cfx_statedb::Result as DbResult;
 use cfx_types::AddressWithSpace;
-use primitives::{Account, EpochId, StorageKey};
+use primitives::{Account, StorageKey};
 
-pub struct StateCommitResult {
-    pub state_root: StateRootWithAuxInfo,
-    pub accounts_for_txpool: Vec<Account>,
-}
-
-impl State {
-    /// Commit everything to the storage.
-    pub fn commit(
-        mut self, epoch_id: EpochId,
-        mut debug_record: Option<&mut ComputeEpochDebugRecord>,
-    ) -> DbResult<StateCommitResult> {
-        debug!("Commit epoch[{}]", epoch_id);
-
+impl State<'_> {
+    /// Writes account and global changes through StateDb to its backend,
+    /// returning the account updates used for transaction-pool notification.
+    ///
+    /// This does not compute a state root or commit an epoch. Release the
+    /// State before finalizing storage borrowed from the caller.
+    ///
+    /// # Errors
+    ///
+    /// Returns a database error if a change cannot be applied. The backend may
+    /// contain partial writes, so the caller must abandon the working state
+    /// rather than publish it.
+    ///
+    /// # Panics
+    ///
+    /// Panics if a checkpoint is still active.
+    pub fn apply_changes_to_storage(
+        &mut self, mut debug_record: Option<&mut ComputeEpochDebugRecord>,
+    ) -> DbResult<Vec<Account>> {
         let accounts_for_txpool =
             self.apply_changes_to_statedb(debug_record.as_deref_mut())?;
-        let state_root = self.db.commit(epoch_id, debug_record)?;
-        Ok(StateCommitResult {
-            state_root,
-            accounts_for_txpool,
-        })
-    }
-
-    /// Commit to the statedb and compute state root. Only called in the genesis
-    pub fn compute_state_root_for_genesis(
-        &mut self, mut debug_record: Option<&mut ComputeEpochDebugRecord>,
-    ) -> DbResult<StateRootWithAuxInfo> {
-        self.apply_changes_to_statedb(debug_record.as_deref_mut())?;
-        self.db.compute_state_root(debug_record)
+        self.db.apply_changes_to_storage(debug_record)?;
+        Ok(accounts_for_txpool)
     }
 
     /// Apply changes for the accounts and global variables to the statedb.
@@ -116,7 +109,7 @@ impl State {
     }
 }
 
-impl State {
+impl State<'_> {
     pub fn commit_cache(&mut self, retain_transient_storage: bool) {
         assert!(self.no_checkpoint());
         for (addr, mut account) in self.cache.get_mut().drain() {
@@ -125,16 +118,5 @@ impl State {
             }
             self.committed_cache.insert(addr, account.entry);
         }
-    }
-}
-
-impl State {
-    // Some test code will reuse state incorrectly, so we implement a version
-    // which does not take ownership when committing.
-    #[cfg(test)]
-    pub fn commit_for_test(&mut self, epoch_id: EpochId) -> DbResult<()> {
-        self.apply_changes_to_statedb(None)?;
-        self.db.commit(epoch_id, None)?;
-        Ok(())
     }
 }

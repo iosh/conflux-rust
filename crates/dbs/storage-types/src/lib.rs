@@ -10,4 +10,4 @@ mod state;
 
 pub use error::{Error, Result};
 pub use key::to_key_prefix_iter_upper_bound;
-pub use state::{AccountClearMode, MptKeyValue, StateTrait};
+pub use state::{AccountClearMode, MptKeyValue, StateStorage, StateTrait};

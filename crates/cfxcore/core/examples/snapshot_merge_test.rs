@@ -419,11 +419,11 @@ fn add_accounts_and_commit<'a, Iter>(
 where
     Iter: Iterator<Item = (&'a AddressWithSpace, &'a Account)>,
 {
-    let state = manager
+    let mut storage = manager
         .get_state_for_next_epoch(state_index, false)
         .unwrap()
         .unwrap();
-    let mut state = StateDb::new(state);
+    let mut state = StateDb::new(storage.as_mut());
     for _ in 0..accounts {
         let (addr, account) =
             account_map.next().expect("Caller has checked the size");
@@ -437,7 +437,12 @@ where
             .unwrap();
     }
     let epoch = H256::random();
-    state.commit(epoch, /* debug_record = */ None).unwrap();
+    state.apply_changes_to_storage(None).unwrap();
+    drop(state);
+    if storage.get_state_root().is_err() {
+        storage.compute_state_root().unwrap();
+    }
+    storage.commit(epoch).unwrap();
     epoch
 }
 

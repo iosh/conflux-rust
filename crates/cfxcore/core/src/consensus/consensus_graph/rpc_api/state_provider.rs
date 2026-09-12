@@ -29,7 +29,7 @@ impl ConsensusGraph {
 
     pub fn get_eth_state_db_by_epoch_number(
         &self, epoch_number: EpochNumber, rpc_param_name: &str,
-    ) -> CoreResult<StateDb> {
+    ) -> CoreResult<StateDb<'static>> {
         self.get_state_db_by_epoch_number_with_space(
             epoch_number,
             rpc_param_name,
@@ -39,7 +39,7 @@ impl ConsensusGraph {
 
     pub fn get_state_db_by_epoch_number(
         &self, epoch_number: EpochNumber, rpc_param_name: &str,
-    ) -> CoreResult<StateDb> {
+    ) -> CoreResult<StateDb<'static>> {
         self.get_state_db_by_epoch_number_with_space(
             epoch_number,
             rpc_param_name,
@@ -50,7 +50,7 @@ impl ConsensusGraph {
     fn get_state_db_by_epoch_number_with_space(
         &self, epoch_number: EpochNumber, rpc_param_name: &str,
         space: Option<Space>,
-    ) -> CoreResult<StateDb> {
+    ) -> CoreResult<StateDb<'static>> {
         invalid_params_check(
             rpc_param_name,
             self.validate_stated_epoch(&epoch_number),
@@ -61,7 +61,7 @@ impl ConsensusGraph {
         )?;
         let hash =
             self.inner.read().get_pivot_hash_from_epoch_number(height)?;
-        Ok(StateDb::new(
+        Ok(StateDb::from_owned(
             self.get_state_by_height_and_hash(height, &hash, space)?,
         ))
     }

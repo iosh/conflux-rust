@@ -31,16 +31,16 @@ use crate::{
 };
 
 /// Transaction executor.
-pub struct ExecutiveContext<'a> {
-    state: &'a mut State,
+pub struct ExecutiveContext<'a, 'db> {
+    state: &'a mut State<'db>,
     env: &'a Env,
     machine: &'a Machine,
     spec: &'a Spec,
 }
 
-impl<'a> ExecutiveContext<'a> {
+impl<'a, 'db> ExecutiveContext<'a, 'db> {
     pub fn new(
-        state: &'a mut State, env: &'a Env, machine: &'a Machine,
+        state: &'a mut State<'db>, env: &'a Env, machine: &'a Machine,
         spec: &'a Spec,
     ) -> Self {
         ExecutiveContext {
@@ -172,7 +172,7 @@ pub mod test_util {
 
     use super::{pre_checked_executive::exec_vm, ExecutiveContext};
 
-    impl<'a> ExecutiveContext<'a> {
+    impl<'a, 'db> ExecutiveContext<'a, 'db> {
         pub fn call_for_test(
             &mut self, params: ActionParams, substate: &mut Substate,
             tracer: &mut dyn TracerTrait,

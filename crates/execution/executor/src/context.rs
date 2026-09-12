@@ -62,7 +62,7 @@ impl OriginInfo {
     pub fn recipient(&self) -> &Address { &self.address }
 }
 
-pub struct Context<'a> {
+pub struct Context<'a, 'db> {
     space: Space,
     env: &'a Env,
     depth: usize,
@@ -73,15 +73,15 @@ pub struct Context<'a> {
     spec: &'a Spec,
     static_flag: bool,
 
-    state: &'a mut State,
+    state: &'a mut State<'db>,
     callstack: &'a mut CallStackInfo,
     tracer: &'a mut dyn TracerTrait,
 }
 
-impl<'a> Context<'a> {
+impl<'a, 'db> Context<'a, 'db> {
     pub fn new<'b, 'c>(
         frame_local: &'a mut FrameLocal<'b>,
-        runtime_resources: &'a mut RuntimeRes<'c>,
+        runtime_resources: &'a mut RuntimeRes<'c, 'db>,
     ) -> Self {
         let space = frame_local.space;
         let env = &frame_local.env;
@@ -162,7 +162,7 @@ impl<'a> Context<'a> {
     }
 }
 
-impl<'a> ContextTrait for Context<'a> {
+impl<'a, 'db> ContextTrait for Context<'a, 'db> {
     fn storage_at(&self, key: &[u8]) -> vm::Result<U256> {
         let receiver = AddressWithSpace {
             address: self.origin.address,
@@ -608,8 +608,8 @@ impl<'a> ContextTrait for Context<'a> {
     }
 }
 
-impl<'a> Context<'a> {
-    pub fn internal_ref(&mut self) -> InternalRefContext<'_> {
+impl<'a, 'db> Context<'a, 'db> {
+    pub fn internal_ref(&mut self) -> InternalRefContext<'_, 'db> {
         InternalRefContext {
             env: self.env,
             spec: self.spec,
@@ -690,7 +690,7 @@ mod tests {
     // database directory.
     #[allow(unused)]
     struct TestSetup {
-        state: State,
+        state: State<'static>,
         machine: Machine,
         spec: Spec,
         substate: Substate,

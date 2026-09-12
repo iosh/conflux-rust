@@ -1,6 +1,7 @@
 use crate::{
-    impls::errors::*, state::StateTrait, MptKeyValue, NodeMerkleProof,
-    StateProof, StorageStateTraitExt,
+    impls::errors::*,
+    state::{StateStorage, StateTrait},
+    MptKeyValue, NodeMerkleProof, StateProof, StorageStateTraitExt,
 };
 use cfx_internal_common::StateRootWithAuxInfo;
 use cfx_types::Space;
@@ -268,7 +269,7 @@ impl<'a> From<StorageKeyWithSpace<'a>> for OwnedStorageKeyWithSpace {
     }
 }
 
-impl<Main: StateTrait> StateTrait for ReplicatedState<Main> {
+impl<Main: StateTrait> StateStorage for ReplicatedState<Main> {
     fn get(
         &self, access_key: StorageKeyWithSpace,
     ) -> Result<Option<Box<[u8]>>> {
@@ -323,7 +324,9 @@ impl<Main: StateTrait> StateTrait for ReplicatedState<Main> {
             only_account_key,
         )
     }
+}
 
+impl<Main: StateTrait> StateTrait for ReplicatedState<Main> {
     fn compute_state_root(&mut self) -> Result<StateRootWithAuxInfo> {
         self.replication_handler
             .send_op(StateOperation::ComputeStateRoot);

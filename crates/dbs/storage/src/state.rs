@@ -10,7 +10,7 @@
 /// A writable state is copy-on-write reference to the base state in the
 /// state manager. State is supposed to be owned by single user.
 pub use super::impls::state::State;
-pub use cfx_storage_types::StateTrait;
+pub use cfx_storage_types::{StateStorage, StateTrait};
 use cfx_types::AddressWithSpace;
 
 pub type WithProof = primitives::static_bool::Yes;

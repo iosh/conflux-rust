@@ -1,6 +1,6 @@
 use crate::{
     impls::{errors::*, state::ChildrenMerkleMap},
-    state::StateTrait,
+    state::{StateStorage, StateTrait},
     utils::access_mode,
     CowNodeRef, DeltaMpt, MptKeyValue, NodeRefDeltaMpt, OwnedNodeSet,
     SubTrieVisitor,
@@ -348,7 +348,7 @@ impl SingleMptState {
     }
 }
 
-impl StateTrait for SingleMptState {
+impl StateStorage for SingleMptState {
     fn get(
         &self, access_key: StorageKeyWithSpace,
     ) -> Result<Option<Box<[u8]>>> {
@@ -419,7 +419,9 @@ impl StateTrait for SingleMptState {
             only_account_key,
         )
     }
+}
 
+impl StateTrait for SingleMptState {
     fn compute_state_root(&mut self) -> Result<StateRootWithAuxInfo> {
         self.ensure_temp_slab_for_db_load();
 

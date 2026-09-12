@@ -21,7 +21,7 @@ use cfx_statedb::{
 use cfx_types::{Address, AddressSpaceUtil, BigEndianHash, H256, U256};
 use diem_types::term_state::MAX_TERM_POINTS;
 
-impl State {
+impl State<'_> {
     pub fn inc_distributable_pos_interest(
         &mut self, current_block_number: u64,
     ) -> DbResult<()> {

@@ -5,7 +5,7 @@ use cfx_parameters::genesis::{
 use cfx_statedb::{global_params::*, Result as DbResult};
 use cfx_types::{Address, AddressSpaceUtil, AddressWithSpace, U256};
 
-impl State {
+impl State<'_> {
     pub fn total_issued_tokens(&self) -> U256 {
         self.global_stat.get::<TotalIssued>()
     }

@@ -10,7 +10,7 @@ use cfx_types::{
 };
 use primitives::StorageValue;
 
-impl State {
+impl State<'_> {
     // System Storage shares the cache and checkpoint mechanisms with
     // `OverlayAccount` storage entries. Similar to global statistic
     // variables, it represents global variables of the blockchain system,
@@ -144,7 +144,7 @@ impl State {
 }
 
 #[cfg(test)]
-impl State {
+impl State<'_> {
     /// Get the value of storage at a specific checkpoint.
     pub fn checkpoint_storage_at(
         &self, start_checkpoint_index: usize, address: &AddressWithSpace,

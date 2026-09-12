@@ -12,7 +12,7 @@ use primitives::extract_7702_payload;
 use primitives::StorageLayout;
 use std::sync::Arc;
 
-impl State {
+impl State<'_> {
     pub fn exists(&self, address: &AddressWithSpace) -> DbResult<bool> {
         Ok(self.read_account_lock(address)?.is_some())
     }

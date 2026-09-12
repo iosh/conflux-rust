@@ -230,7 +230,7 @@ impl Drop for State {
     }
 }
 
-impl StateTrait for State {
+impl StateStorage for State {
     fn get(
         &self, access_key: StorageKeyWithSpace,
     ) -> Result<Option<Box<[u8]>>> {
@@ -319,7 +319,9 @@ impl StateTrait for State {
             only_account_key,
         )
     }
+}
 
+impl StateTrait for State {
     fn compute_state_root(&mut self) -> Result<StateRootWithAuxInfo> {
         self.ensure_temp_slab_for_db_load();
 

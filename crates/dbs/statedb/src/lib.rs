@@ -25,7 +25,9 @@ pub use self::{
     statedb_ext::StateDbExt,
 };
 pub use cfx_storage_types::access_mode;
-pub type StateDb = StateDbGeneric;
+#[cfg(feature = "testonly_code")]
+pub use in_memory_storage::InmemoryStorage;
+pub type StateDb<'db> = StateDbGeneric<'db>;
 
 // Put StateDb in mod to make sure that methods from statedb_ext don't access
 // its fields directly.
@@ -37,8 +39,8 @@ mod impls {
     // see `delete_all`
     type AccessedEntries = BTreeMap<Key, EntryValue>;
 
-    // Use generic type for better test-ability.
-    pub struct StateDb {
+    /// Buffered state access over owned or borrowed storage.
+    pub struct StateDb<'db> {
         /// Contains the original storage key values for all loaded and
         /// modified key values.
         accessed_entries: RwLock<AccessedEntries>,
@@ -46,34 +48,50 @@ mod impls {
         /// Account storage/code clears applied before later point writes.
         account_clears: BTreeSet<AccountClear>,
 
-        /// The underlying storage, The storage is updated only upon fn
-        /// commit().
-        storage: Box<dyn StorageStateTrait>,
+        /// Updated by `apply_changes_to_storage` after buffered changes.
+        storage: Storage<'db>,
     }
 
-    impl StateDb {
-        pub fn new(storage: Box<dyn StorageStateTrait>) -> Self {
+    impl StateDb<'static> {
+        #[cfg(feature = "testonly_code")]
+        pub fn new_for_unit_test() -> Self {
+            Self::from_owned(Box::new(InmemoryStorage::default()))
+        }
+
+        #[cfg(feature = "testonly_code")]
+        pub fn new_for_unit_test_with_epoch(
+            epoch_id: &primitives::EpochId,
+        ) -> Self {
+            Self::from_owned(Box::new(
+                InmemoryStorage::from_epoch_id(epoch_id).unwrap(),
+            ))
+        }
+    }
+
+    impl<'db> StateDb<'db> {
+        /// Borrows storage for buffered state reads and writes.
+        ///
+        /// Changes reach storage through `apply_changes_to_storage`. The
+        /// caller retains responsibility for finalizing storage after the
+        /// database releases its borrow.
+        pub fn new(storage: &'db mut dyn StateStorage) -> Self {
             StateDb {
                 accessed_entries: Default::default(),
                 account_clears: BTreeSet::new(),
-                storage,
+                storage: Storage::Borrowed(storage),
             }
         }
 
-        #[cfg(feature = "testonly_code")]
-        pub fn new_for_unit_test() -> Self {
-            use self::in_memory_storage::InmemoryStorage;
-
-            Self::new(Box::new(InmemoryStorage::default()))
-        }
-
-        #[cfg(feature = "testonly_code")]
-        pub fn new_for_unit_test_with_epoch(epoch_id: &EpochId) -> Self {
-            use self::in_memory_storage::InmemoryStorage;
-
-            Self::new(Box::new(
-                InmemoryStorage::from_epoch_id(epoch_id).unwrap(),
-            ))
+        /// Takes ownership of storage for buffered state access.
+        ///
+        /// Use `new` when the caller must recover or finalize storage after
+        /// execution. This constructor exposes only its read/write interface.
+        pub fn from_owned(storage: Box<dyn StateStorage + 'db>) -> Self {
+            StateDb {
+                accessed_entries: Default::default(),
+                account_clears: BTreeSet::new(),
+                storage: Storage::Owned(storage),
+            }
         }
 
         #[cfg(test)]
@@ -523,8 +541,7 @@ mod impls {
                 StorageLayout,
             >,
             accept_account_deletion: bool, address: &[u8], space: Space,
-            storage: &dyn StorageStateTrait,
-            accessed_entries: &AccessedEntries,
+            storage: &dyn StateStorage, accessed_entries: &AccessedEntries,
         ) -> Result<()> {
             if storage_layouts_to_rewrite
                 .contains_key(&(address.to_vec(), space))
@@ -600,7 +617,17 @@ mod impls {
             Ok(self.storage.set(key, value)?)
         }
 
-        fn apply_changes_to_storage(
+        /// Writes buffered clears, changed entries, and storage layouts.
+        ///
+        /// This does not compute a state root or commit an epoch. Buffers are
+        /// cleared only after all writes succeed.
+        ///
+        /// # Errors
+        ///
+        /// Returns a storage or decoding error if changes cannot be applied.
+        /// Storage may contain partial writes after an error; the caller must
+        /// discard the working state instead of publishing it.
+        pub fn apply_changes_to_storage(
             &mut self, mut debug_record: Option<&mut ComputeEpochDebugRecord>,
         ) -> Result<()> {
             for clear in &self.account_clears {
@@ -641,7 +668,7 @@ mod impls {
                             v.current_value.is_none(),
                             address_bytes,
                             storage_key.space,
-                            self.storage.as_ref(),
+                            &*self.storage,
                             &accessed_entries,
                         )?;
                     }
@@ -656,7 +683,7 @@ mod impls {
                             /* accept_account_deletion = */ false,
                             address_bytes,
                             storage_key.space,
-                            self.storage.as_ref(),
+                            &*self.storage,
                             &accessed_entries,
                         );
                         if result.is_err() {
@@ -675,7 +702,7 @@ mod impls {
                             /* accept_account_deletion = */ false,
                             address_bytes,
                             storage_key.space,
-                            self.storage.as_ref(),
+                            &*self.storage,
                             &accessed_entries,
                         )?;
                     }
@@ -697,32 +724,30 @@ mod impls {
             self.account_clears.clear();
             Ok(())
         }
+    }
 
-        /// This method is only used for genesis block because state root is
-        /// required to compute genesis epoch_id. For other blocks there are
-        /// deferred execution so the state root computation is merged inside
-        /// commit method.
-        pub fn compute_state_root(
-            &mut self, debug_record: Option<&mut ComputeEpochDebugRecord>,
-        ) -> Result<StateRootWithAuxInfo> {
-            self.apply_changes_to_storage(debug_record)?;
-            Ok(self.storage.compute_state_root()?)
+    enum Storage<'db> {
+        Owned(Box<dyn StateStorage + 'db>),
+        Borrowed(&'db mut dyn StateStorage),
+    }
+
+    impl<'db> Deref for Storage<'db> {
+        type Target = dyn StateStorage + 'db;
+
+        fn deref(&self) -> &Self::Target {
+            match self {
+                Self::Owned(storage) => storage.as_ref(),
+                Self::Borrowed(storage) => &**storage,
+            }
         }
+    }
 
-        pub fn commit(
-            &mut self, epoch_id: EpochId,
-            mut debug_record: Option<&mut ComputeEpochDebugRecord>,
-        ) -> Result<StateRootWithAuxInfo> {
-            self.apply_changes_to_storage(debug_record.as_deref_mut())?;
-
-            let result = match self.storage.get_state_root() {
-                Ok(r) => r,
-                Err(_) => self.compute_state_root(debug_record)?,
-            };
-
-            self.storage.commit(epoch_id)?;
-
-            Ok(result)
+    impl DerefMut for Storage<'_> {
+        fn deref_mut(&mut self) -> &mut Self::Target {
+            match self {
+                Self::Owned(storage) => storage.as_mut(),
+                Self::Borrowed(storage) => &mut **storage,
+            }
         }
     }
 
@@ -800,13 +825,10 @@ mod impls {
     }
 
     use super::*;
-    use cfx_internal_common::{
-        debug::{ComputeEpochDebugRecord, StateOp},
-        StateRootWithAuxInfo,
-    };
+    use cfx_internal_common::debug::{ComputeEpochDebugRecord, StateOp};
     use cfx_storage_types::{
         access_mode, to_key_prefix_iter_upper_bound, AccountClearMode,
-        MptKeyValue, StateTrait as StorageStateTrait,
+        MptKeyValue, StateStorage,
     };
     use cfx_types::{
         address_util::AddressUtil, Address, AddressWithSpace, Space, U256,
@@ -814,15 +836,17 @@ mod impls {
     use hashbrown::HashMap;
     use parking_lot::RwLock;
     use primitives::{
-        Account, EpochId, SkipInputCheck, StorageKey, StorageKeyWithSpace,
-        StorageLayout,
+        Account, SkipInputCheck, StorageKey, StorageKeyWithSpace, StorageLayout,
     };
     use std::{
         collections::{
             btree_map::Entry::{Occupied, Vacant},
             BTreeMap, BTreeSet,
         },
-        ops::Bound::{Excluded, Included, Unbounded},
+        ops::{
+            Bound::{Excluded, Included, Unbounded},
+            Deref, DerefMut,
+        },
         sync::Arc,
     };
 }

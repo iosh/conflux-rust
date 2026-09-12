@@ -20,7 +20,7 @@ use cfx_types::{Address, AddressSpaceUtil, U256};
 
 // Staking balance
 
-impl State {
+impl State<'_> {
     pub fn staking_balance(&self, address: &Address) -> DbResult<U256> {
         let acc = try_loaded!(self.read_native_account_lock(address));
         Ok(*acc.staking_balance())

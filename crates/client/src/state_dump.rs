@@ -82,7 +82,7 @@ pub fn iterate_dump_whole_state<F: Fn(AccountState)>(
 fn prepare_state_db(
     conf: &mut Configuration, exit_cond_var: Arc<(Mutex<bool>, Condvar)>,
     config: &StateDumpConfig,
-) -> Result<(StateDbGeneric, H256), String> {
+) -> Result<(StateDbGeneric<'static>, H256), String> {
     println("Preparing state...");
     let (data_man, _, _, consensus, sync_service, _, _, _, _, _, _, _) =
         initialize_not_light_node_modules(
@@ -125,7 +125,7 @@ fn prepare_state_db(
         .map_err(|e| e.to_string())?
         .ok_or("Failed to get state")?;
 
-    let state_db = StateDbGeneric::new(state);
+    let state_db = StateDbGeneric::from_owned(state);
 
     Ok((state_db, *state_root))
 }

@@ -123,9 +123,9 @@ pub fn genesis_block(
     need_to_execute: bool, genesis_chain_id: Option<u32>,
     initial_nodes: &Option<GenesisPosState>,
 ) -> Block {
-    let mut state =
-        State::new(StateDb::new(storage_manager.get_state_for_genesis_write()))
-            .expect("Failed to initialize state");
+    let mut storage = storage_manager.get_state_for_genesis_write();
+    let mut state = State::new(StateDb::new(storage.as_mut()))
+        .expect("Failed to initialize state");
 
     let mut genesis_block_author = test_net_version;
     genesis_block_author.set_user_account_type_bits();
@@ -372,11 +372,13 @@ pub fn genesis_block(
         .genesis_special_remove_account(&genesis_account_address.address)
         .expect("Clean account failed");
 
-    let state_root = state
-        .compute_state_root_for_genesis(
+    state
+        .apply_changes_to_storage(
             /* debug_record = */ debug_record.as_mut(),
         )
         .unwrap();
+    drop(state);
+    let state_root = storage.compute_state_root().unwrap();
     let receipt_root = compute_receipts_root(&vec![Arc::new(BlockReceipts {
         receipts: vec![],
         block_number: 0,
@@ -404,12 +406,8 @@ pub fn genesis_block(
         genesis.hash()
     );
 
-    state
-        .commit(
-            genesis.block_header.hash(),
-            /* debug_record = */ debug_record.as_mut(),
-        )
-        .unwrap();
+    storage.commit(genesis.block_header.hash()).unwrap();
+    drop(storage);
     genesis.block_header.pow_hash = Some(Default::default());
     debug!(
         "genesis debug_record {}",

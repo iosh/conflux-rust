@@ -52,7 +52,7 @@ impl<'a> SuspendedFrame<'a> {
     /// Continues the execution of the current frame using the result from a
     /// subcall result, along with runtime resources shared across all frames.
     pub fn resume(
-        self, mut result: FrameResult, resources: &mut RuntimeRes<'a>,
+        self, mut result: FrameResult, resources: &mut RuntimeRes<'a, '_>,
     ) -> DbResult<FrameStackAction<'a>> {
         let SuspendedFrame {
             mut frame_local,

@@ -52,14 +52,16 @@ mod tests;
 
 pub use self::{
     collateral::{initialize_cip107, settle_collateral_for_all},
-    commit::StateCommitResult,
     pos::{distribute_pos_interest, update_pos_status},
     reward::initialize_cip137,
     sponsor::COMMISSION_PRIVILEGE_SPECIAL_KEY,
     staking::initialize_or_update_dao_voted_params,
 };
 #[cfg(test)]
-pub use tests::{get_state_by_epoch_id, get_state_for_genesis_write};
+pub use tests::{
+    get_state_by_epoch_id, get_state_for_genesis_write,
+    get_storage_for_genesis_write,
+};
 
 use self::checkpoints::CheckpointLayer;
 use super::{
@@ -78,13 +80,13 @@ use std::collections::{BTreeSet, HashMap, HashSet};
 /// A caching and checkpoint layer built upon semantically meaningful database
 /// interfaces, providing interfaces and logics for managing accounts and global
 /// statistics to the execution engine.
-pub struct State {
+pub struct State<'db> {
     /// The backend database
-    pub(super) db: StateDb,
+    pub(super) db: StateDb<'db>,
 
     /// Caches for the account entries
     ///
-    /// WARNING: Don't delete cache entries outside of `State::commit`, unless
+    /// WARNING: Don't delete cache entries outside of state writeback, unless
     /// you are familiar with checkpoint maintenance.
     pub cache: RwLock<HashMap<AddressWithSpace, AccountEntryWithWarm>>,
 
@@ -101,8 +103,8 @@ pub struct State {
     checkpoints: RwLock<LazyDiscardedVec<CheckpointLayer>>,
 }
 
-impl State {
-    pub fn new(db: StateDb) -> DbResult<Self> {
+impl<'db> State<'db> {
+    pub fn new(db: StateDb<'db>) -> DbResult<Self> {
         let initialized = db.is_initialized()?;
 
         let world_stat = if initialized {

@@ -42,16 +42,16 @@ pub struct EstimateExt {
     pub access_list: AccessList, // default empty
 }
 
-pub struct EstimationContext<'a> {
-    state: &'a mut State,
+pub struct EstimationContext<'a, 'db> {
+    state: &'a mut State<'db>,
     env: &'a Env,
     machine: &'a Machine,
     spec: &'a Spec,
 }
 
-impl<'a> EstimationContext<'a> {
+impl<'a, 'db> EstimationContext<'a, 'db> {
     pub fn new(
-        state: &'a mut State, env: &'a Env, machine: &'a Machine,
+        state: &'a mut State<'db>, env: &'a Env, machine: &'a Machine,
         spec: &'a Spec,
     ) -> Self {
         EstimationContext {
@@ -62,7 +62,7 @@ impl<'a> EstimationContext<'a> {
         }
     }
 
-    fn as_executive<'b>(&'b mut self) -> ExecutiveContext<'b> {
+    fn as_executive<'b>(&'b mut self) -> ExecutiveContext<'b, 'db> {
         ExecutiveContext::new(self.state, self.env, self.machine, self.spec)
     }
 

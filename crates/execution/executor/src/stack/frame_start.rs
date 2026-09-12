@@ -62,7 +62,7 @@ impl<'a> FreshFrame<'a> {
     /// Initializes and executes a frame, along with runtime resources shared
     /// across all frames.
     pub(super) fn init_and_exec(
-        self, resources: &mut RuntimeRes<'a>,
+        self, resources: &mut RuntimeRes<'a, '_>,
     ) -> DbResult<FrameStackAction<'a>> {
         let FreshFrame {
             frame_local,

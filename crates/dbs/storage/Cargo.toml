@@ -45,6 +45,7 @@ tokio = { workspace = true, features = ["sync"] }
 cfx-util-macros = { workspace = true }
 
 [dev-dependencies]
+cfx-mpt = { workspace = true, features = ["testonly_code"] }
 primitives = { workspace = true, features = ["test_no_account_length_check"] }
 
 [features]

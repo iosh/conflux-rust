@@ -367,8 +367,14 @@ impl<NodeRefT: NodeRefTrait> CompactedChildrenTable<NodeRefT> {
     }
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "testonly_code"))]
 impl<NodeRefT: NodeRefTrait> CompactedChildrenTable<NodeRefT> {
+    /// Verifies that empty tables do not retain an allocation.
+    ///
+    /// # Panics
+    ///
+    /// Panics if an empty table has neither a null nor an aligned dangling
+    /// pointer.
     pub fn assert_no_alloc_in_empty_children_table(&self) {
         assert_eq!(
             true,

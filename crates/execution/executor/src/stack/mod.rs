@@ -45,7 +45,7 @@ enum FrameStackAction<'a> {
 /// execution with the results from the callee. The loop continues until the
 /// call stack is empty, indicating that the main frame has finished executing.
 pub fn exec_main_frame<'a>(
-    main_frame: FreshFrame<'a>, mut resources: RuntimeRes<'a>,
+    main_frame: FreshFrame<'a>, mut resources: RuntimeRes<'a, '_>,
 ) -> DbResult<FrameResult> {
     let mut frame_stack: Vec<SuspendedFrame> = Vec::new();
     let mut last_result = main_frame.init_and_exec(&mut resources)?;
@@ -71,7 +71,7 @@ pub fn exec_main_frame<'a>(
 #[inline]
 fn run_executable<'a>(
     executable: Box<dyn 'a + Executable>, mut frame_local: FrameLocal<'a>,
-    resources: &mut RuntimeRes<'a>,
+    resources: &mut RuntimeRes<'a, '_>,
 ) -> DbResult<FrameStackAction<'a>> {
     let vm_context = frame_local.make_vm_context(resources);
     let output = executable.execute(vm_context)?;

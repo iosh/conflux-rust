@@ -5,7 +5,7 @@ use cfx_types::{
 };
 use primitives::{Account, StorageLayout};
 
-impl State {
+impl State<'_> {
     pub fn new_contract_with_admin(
         &mut self, contract: &AddressWithSpace, admin: &Address, balance: U256,
         storage_layout: Option<StorageLayout>, cip107: bool,
@@ -51,7 +51,7 @@ impl State {
     }
 }
 
-impl State {
+impl State<'_> {
     #[cfg(test)]
     pub fn new_contract_with_code(
         &mut self, contract: &AddressWithSpace, balance: U256,

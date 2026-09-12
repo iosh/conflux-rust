@@ -9,7 +9,8 @@ use crate::internal_contract::{
 use cfx_parameters::{
     consensus::ONE_CFX_IN_DRIP, genesis::DEV_GENESIS_KEY_PAIR, staking::*,
 };
-use cfx_statedb::StateDb;
+use cfx_statedb::{InmemoryStorage, StateDb};
+use cfx_storage::state::StateTrait;
 use cfx_types::{
     address_util::AddressUtil, Address, AddressSpaceUtil, BigEndianHash, Space,
     U256,
@@ -17,13 +18,21 @@ use cfx_types::{
 use keccak_hash::{keccak, KECCAK_EMPTY};
 use primitives::{AccessListItem, EpochId, StorageKey, StorageLayout};
 
-pub fn get_state_by_epoch_id(epoch_id: &EpochId) -> State {
+pub fn get_state_by_epoch_id(epoch_id: &EpochId) -> State<'static> {
     State::new(StateDb::new_for_unit_test_with_epoch(epoch_id)).unwrap()
 }
 
 #[cfg(test)]
-pub fn get_state_for_genesis_write() -> State {
-    let mut state = State::new(StateDb::new_for_unit_test())
+pub fn get_state_for_genesis_write() -> State<'static> {
+    State::new(StateDb::from_owned(Box::new(
+        get_storage_for_genesis_write(),
+    )))
+    .expect("Failed to initialize state")
+}
+
+pub fn get_storage_for_genesis_write() -> InmemoryStorage {
+    let mut storage = InmemoryStorage::default();
+    let mut state = State::new(StateDb::new(&mut storage))
         .expect("Failed to initialize state");
 
     initialize_internal_contract_accounts(
@@ -32,12 +41,14 @@ pub fn get_state_for_genesis_write() -> State {
     )
     .expect("no db error");
     let genesis_epoch_id = EpochId::default();
-    state.commit_for_test(genesis_epoch_id).expect(
+    state.apply_changes_to_storage(None).expect(
         // This is a comment to let cargo format the rest in a single line.
         &concat!(file!(), ":", line!(), ":", column!()),
     );
 
-    state
+    drop(state);
+    storage.commit(genesis_epoch_id).unwrap();
+    storage
 }
 
 fn u256_to_vec(val: &U256) -> Vec<u8> { val.to_big_endian().to_vec() }
@@ -421,7 +432,8 @@ fn checkpoint_from_empty_get_storage_at() {
 
 #[test]
 fn checkpoint_get_storage_at() {
-    let mut state = get_state_for_genesis_write();
+    let mut storage = get_storage_for_genesis_write();
+    let mut state = State::new(StateDb::new(&mut storage)).unwrap();
     let mut a = Address::zero();
     a.set_user_account_type_bits();
     let a_s = a.with_native_space();
@@ -470,9 +482,12 @@ fn checkpoint_get_storage_at() {
             true,
         )
         .unwrap();
-    state
-        .commit_for_test(BigEndianHash::from_uint(&U256::from(1u64)))
+    state.apply_changes_to_storage(None).unwrap();
+    drop(state);
+    storage
+        .commit(BigEndianHash::from_uint(&U256::from(1u64)))
         .unwrap();
+    let mut state = State::new(StateDb::new(&mut storage)).unwrap();
 
     substates.clear();
     substates.push(Substate::new());
@@ -709,7 +724,8 @@ fn checkpoint_get_storage_at() {
 
 #[test]
 fn kill_account_with_checkpoints() {
-    let mut state_0 = get_state_for_genesis_write();
+    let mut storage = get_storage_for_genesis_write();
+    let mut state_0 = State::new(StateDb::new(&mut storage)).unwrap();
     let mut a = Address::zero();
     a.set_contract_type_bits();
     let a_s = a.with_native_space();
@@ -735,11 +751,12 @@ fn kill_account_with_checkpoints() {
     state_0.discard_checkpoint();
 
     let epoch_id_1 = EpochId::from_uint(&U256::from(1));
-    state_0
-        .commit(epoch_id_1, /* debug_record = */ None)
-        .unwrap();
+    state_0.apply_changes_to_storage(None).unwrap();
+    drop(state_0);
+    storage.commit(epoch_id_1).unwrap();
 
-    let mut state = get_state_by_epoch_id(&epoch_id_1);
+    storage = InmemoryStorage::from_epoch_id(&epoch_id_1).unwrap();
+    let mut state = State::new(StateDb::new(&mut storage)).unwrap();
     // Storage before the account is killed.
     assert_eq!(state.storage_at(&a_s, &k).unwrap(), U256::one());
     state.remove_contract(&a_s).unwrap();
@@ -751,7 +768,9 @@ fn kill_account_with_checkpoints() {
 
     // Commit the state and repeat the assertion.
     let epoch_id = EpochId::from_uint(&U256::from(2));
-    state.commit(epoch_id, /* debug_record = */ None).unwrap();
+    state.apply_changes_to_storage(None).unwrap();
+    drop(state);
+    storage.commit(epoch_id).unwrap();
     let state = get_state_by_epoch_id(&epoch_id);
     assert_eq!(state.storage_at(&a_s, &k).unwrap(), U256::zero());
 
@@ -774,7 +793,8 @@ fn kill_account_with_checkpoints() {
 
 #[test]
 fn check_result_of_simple_payment_to_killed_account() {
-    let mut state_0 = get_state_for_genesis_write();
+    let mut storage = get_storage_for_genesis_write();
+    let mut state_0 = State::new(StateDb::new(&mut storage)).unwrap();
     let sender_addr = DEV_GENESIS_KEY_PAIR.address();
     let sender_addr_s = sender_addr.with_native_space();
     state_0
@@ -809,11 +829,12 @@ fn check_result_of_simple_payment_to_killed_account() {
         .unwrap();
     state_0.discard_checkpoint();
     let epoch_id_1 = EpochId::from_uint(&U256::from(1));
-    state_0
-        .commit(epoch_id_1, /* debug_record = */ None)
-        .unwrap();
+    state_0.apply_changes_to_storage(None).unwrap();
+    drop(state_0);
+    storage.commit(epoch_id_1).unwrap();
 
-    let mut state = get_state_by_epoch_id(&epoch_id_1);
+    storage = InmemoryStorage::from_epoch_id(&epoch_id_1).unwrap();
+    let mut state = State::new(StateDb::new(&mut storage)).unwrap();
     state.remove_contract(&a_s).unwrap();
     // The account is killed. The storage should be empty.
     // assert_eq!(state.storage_at(&a, &k).unwrap(), U256::zero());
@@ -826,7 +847,9 @@ fn check_result_of_simple_payment_to_killed_account() {
     assert_eq!(state.code_hash(&a_s).unwrap(), KECCAK_EMPTY);
     assert_eq!(state.code(&a_s).unwrap(), None);
     // assert_eq!(state.storage_at(&a, &k).unwrap(), U256::zero());
-    state.commit(epoch_id, /* debug_record = */ None).unwrap();
+    state.apply_changes_to_storage(None).unwrap();
+    drop(state);
+    storage.commit(epoch_id).unwrap();
 
     // Commit the state and assert that the account has no storage and no code.
     let state = get_state_by_epoch_id(&epoch_id);
@@ -839,7 +862,8 @@ fn check_result_of_simple_payment_to_killed_account() {
 #[test]
 fn create_contract_fail() {
     let mut substate = Substate::new();
-    let mut state = get_state_for_genesis_write();
+    let mut storage = get_storage_for_genesis_write();
+    let mut state = State::new(StateDb::new(&mut storage)).unwrap();
     let a = Address::from_low_u64_be(1000);
     let a_s = a.with_native_space();
 
@@ -856,14 +880,17 @@ fn create_contract_fail() {
     state.revert_to_checkpoint(); // revert to c1
     assert_eq!(state.exists(&a_s).unwrap(), false);
 
-    state
-        .commit(BigEndianHash::from_uint(&U256::from(1)), None)
+    state.apply_changes_to_storage(None).unwrap();
+    drop(state);
+    storage
+        .commit(BigEndianHash::from_uint(&U256::from(1)))
         .unwrap();
 }
 
 #[test]
 fn create_contract_fail_previous_storage() {
-    let mut state = get_state_for_genesis_write();
+    let mut storage = get_storage_for_genesis_write();
+    let mut state = State::new(StateDb::new(&mut storage)).unwrap();
     let mut a = Address::from_low_u64_be(1000);
     a.set_user_account_type_bits();
     let a_s = a.with_native_space();
@@ -916,9 +943,12 @@ fn create_contract_fail_previous_storage() {
         *COLLATERAL_DRIPS_PER_STORAGE_KEY
     );
     assert_eq!(state.balance(&a_s).unwrap(), U256::zero());
-    state
-        .commit_for_test(BigEndianHash::from_uint(&U256::from(1)))
+    state.apply_changes_to_storage(None).unwrap();
+    drop(state);
+    storage
+        .commit(BigEndianHash::from_uint(&U256::from(1)))
         .unwrap();
+    let mut state = State::new(StateDb::new(&mut storage)).unwrap();
 
     state.clear();
     substates.clear();
@@ -931,7 +961,12 @@ fn create_contract_fail_previous_storage() {
     state.clear();
     substates.clear();
     substates.push(Substate::new());
-    state = get_state_by_epoch_id(&BigEndianHash::from_uint(&U256::from(1)));
+    drop(state);
+    storage = InmemoryStorage::from_epoch_id(&BigEndianHash::from_uint(
+        &U256::from(1),
+    ))
+    .unwrap();
+    let mut state = State::new(StateDb::new(&mut storage)).unwrap();
     assert_eq!(
         state.total_storage_tokens(),
         *COLLATERAL_DRIPS_PER_STORAGE_KEY
@@ -985,8 +1020,10 @@ fn create_contract_fail_previous_storage() {
     );
     assert_eq!(state.balance(&a_s).unwrap(), U256::from(0));
 
-    state
-        .commit(BigEndianHash::from_uint(&U256::from(2)), None)
+    state.apply_changes_to_storage(None).unwrap();
+    drop(state);
+    storage
+        .commit(BigEndianHash::from_uint(&U256::from(2)))
         .unwrap();
 
     // TODO(69): checking ownership

@@ -18,7 +18,7 @@ lazy_static! {
     pub static ref COMMISSION_PRIVILEGE_SPECIAL_KEY: Address = Address::zero();
 }
 
-impl State {
+impl State<'_> {
     pub fn sponsor_info(
         &self, address: &Address,
     ) -> DbResult<Option<SponsorInfo>> {

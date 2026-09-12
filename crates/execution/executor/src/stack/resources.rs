@@ -3,10 +3,10 @@ use crate::{
 };
 
 /// The global resources and utilities shared across all frames.
-pub struct RuntimeRes<'a> {
+pub struct RuntimeRes<'a, 'db> {
     /// The ledger state including information such as the balance of each
     /// account.
-    pub state: &'a mut State,
+    pub state: &'a mut State<'db>,
 
     /// Metadata about the frame call stack.
     pub callstack: &'a mut CallStackInfo,
@@ -24,14 +24,14 @@ pub mod runtime_res_test {
 
     use super::State;
 
-    pub struct OwnedRuntimeRes<'a> {
-        state: &'a mut State,
+    pub struct OwnedRuntimeRes<'a, 'db> {
+        state: &'a mut State<'db>,
         callstack: CallStackInfo,
         tracer: (),
     }
 
-    impl<'a> From<&'a mut State> for OwnedRuntimeRes<'a> {
-        fn from(state: &'a mut State) -> Self {
+    impl<'a, 'db> From<&'a mut State<'db>> for OwnedRuntimeRes<'a, 'db> {
+        fn from(state: &'a mut State<'db>) -> Self {
             OwnedRuntimeRes {
                 state,
                 callstack: CallStackInfo::new(),
@@ -40,8 +40,8 @@ pub mod runtime_res_test {
         }
     }
 
-    impl<'a> OwnedRuntimeRes<'a> {
-        pub fn as_res<'b>(&'b mut self) -> RuntimeRes<'b> {
+    impl<'a, 'db> OwnedRuntimeRes<'a, 'db> {
+        pub fn as_res<'b>(&'b mut self) -> RuntimeRes<'b, 'db> {
             RuntimeRes {
                 state: &mut self.state,
                 callstack: &mut self.callstack,

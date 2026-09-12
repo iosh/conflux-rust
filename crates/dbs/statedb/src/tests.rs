@@ -3,12 +3,9 @@
 // See http://www.gnu.org/licenses/
 
 use super::StateDbGeneric;
-use cfx_internal_common::StateRootWithAuxInfo;
-use cfx_storage_types::{
-    access_mode, Error, MptKeyValue, Result, StateTrait as StorageStateTrait,
-};
+use cfx_storage_types::{access_mode, MptKeyValue, Result, StateStorage};
 use parking_lot::Mutex;
-use primitives::{EpochId, StorageKey, StorageKeyWithSpace, MERKLE_NULL_NODE};
+use primitives::{StorageKey, StorageKeyWithSpace};
 use std::collections::HashMap;
 
 type StorageValue = Box<[u8]>;
@@ -46,15 +43,7 @@ impl MockStorage {
 }
 
 #[allow(unused)]
-impl StorageStateTrait for MockStorage {
-    fn commit(&mut self, epoch: EpochId) -> Result<StateRootWithAuxInfo> {
-        self.compute_state_root()
-    }
-
-    fn compute_state_root(&mut self) -> Result<StateRootWithAuxInfo> {
-        Ok(StateRootWithAuxInfo::genesis(&MERKLE_NULL_NODE))
-    }
-
+impl StateStorage for MockStorage {
     fn delete(&mut self, access_key: StorageKeyWithSpace) -> Result<()> {
         self.num_writes += 1;
         let key = access_key.to_key_bytes();
@@ -102,10 +91,6 @@ impl StorageStateTrait for MockStorage {
         Ok(self.contents.get(&key).cloned())
     }
 
-    fn get_state_root(&self) -> Result<StateRootWithAuxInfo> {
-        Err(Error::Msg("No state root".to_owned()).into())
-    }
-
     fn set(
         &mut self, access_key: StorageKeyWithSpace, value: Box<[u8]>,
     ) -> Result<()> {
@@ -139,7 +124,7 @@ impl StorageStateTrait for MockStorage {
     }
 }
 
-type StateDbTest = StateDbGeneric;
+type StateDbTest = StateDbGeneric<'static>;
 
 // convert `key` to storage interface format
 fn storage_key(key: &'static [u8]) -> StorageKeyWithSpace<'static> {
@@ -160,7 +145,7 @@ fn init_state_db() -> StateDbTest {
     contents.insert(key(b"22"), value(b"v0"));
 
     let storage = MockStorage::with_contents(contents);
-    StateDbTest::new(Box::new(storage))
+    StateDbTest::from_owned(Box::new(storage))
 }
 
 #[allow(unused)]
@@ -195,7 +180,7 @@ fn test_basic() {
         .delete_all::<access_mode::Write>(storage_key(b"0"), None)
         .unwrap();
 
-    state_db.commit(MERKLE_NULL_NODE, None).unwrap();
+    state_db.apply_changes_to_storage(None).unwrap();
     // FIXME(lpl): Enable tests.
     // let storage = (state_db.get_storage_mut() as &dyn
     // Any).downcast_ref::<MockStorage>().unwrap(); let contents =

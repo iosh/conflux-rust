@@ -5,7 +5,7 @@ use std::{
 
 use cfx_internal_common::StateRootWithAuxInfo;
 use cfx_storage_types::{
-    Error, MptKeyValue, Result, StateTrait as StorageTrait,
+    Error, MptKeyValue, Result, StateStorage, StateTrait as StorageTrait,
 };
 use cfx_types::H256;
 use primitives::StorageKeyWithSpace;
@@ -15,6 +15,9 @@ thread_local! {
     static HASHMAP: RefCell<HashMap<primitives::EpochId, BTreeMap<Vec<u8>, Box<[u8]>>>> = RefCell::new(HashMap::new());
 }
 
+/// In-memory test storage with thread-local epoch snapshots.
+///
+/// Its root is a digest of sorted entries, not a Conflux MPT root.
 #[derive(Default)]
 pub struct InmemoryStorage {
     inner: BTreeMap<Vec<u8>, Box<[u8]>>,
@@ -32,7 +35,7 @@ impl InmemoryStorage {
     }
 }
 
-impl StorageTrait for InmemoryStorage {
+impl StateStorage for InmemoryStorage {
     fn get(
         &self, access_key: StorageKeyWithSpace,
     ) -> Result<Option<Box<[u8]>>> {
@@ -75,7 +78,9 @@ impl StorageTrait for InmemoryStorage {
         let kvs = read_prefix(&self.inner, &access_key_prefix.to_key_bytes());
         Ok(if kvs.is_empty() { None } else { Some(kvs) })
     }
+}
 
+impl StorageTrait for InmemoryStorage {
     fn compute_state_root(&mut self) -> Result<StateRootWithAuxInfo> {
         if let Some(ref state_root) = self.cached_state_root {
             return Ok(state_root.clone());

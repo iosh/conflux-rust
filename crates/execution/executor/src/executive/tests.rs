@@ -5,7 +5,7 @@
 use super::*;
 use crate::{
     machine::{Machine, VmFactory},
-    state::{get_state_by_epoch_id, get_state_for_genesis_write},
+    state::{get_state_for_genesis_write, get_storage_for_genesis_write},
     substate::Substate,
     tests::MOCK_TX_HASH,
 };
@@ -14,6 +14,8 @@ use cfx_parameters::{
     internal_contract_addresses::STORAGE_INTEREST_STAKING_CONTRACT_ADDRESS,
     staking::*,
 };
+use cfx_statedb::{InmemoryStorage, StateDb};
+use cfx_storage::state::StateTrait;
 use cfx_types::{
     address_util::AddressUtil, cal_contract_address_with_space, Address,
     AddressSpaceUtil, BigEndianHash, CreateContractAddressType, Space, U256,
@@ -409,7 +411,8 @@ fn test_revert() {
     let spec = machine.spec_for_test(env.number);
     let mut substate = Substate::new();
 
-    let mut state = get_state_for_genesis_write();
+    let mut storage = get_storage_for_genesis_write();
+    let mut state = State::new(StateDb::new(&mut storage)).unwrap();
     state
         .add_balance(
             &sender_with_space,
@@ -419,9 +422,12 @@ fn test_revert() {
     state
         .new_contract_with_code(&contract_address_with_space, U256::zero())
         .expect(&concat!(file!(), ":", line!(), ":", column!()));
-    state
-        .commit_for_test(BigEndianHash::from_uint(&U256::from(1)))
+    state.apply_changes_to_storage(None).unwrap();
+    drop(state);
+    storage
+        .commit(BigEndianHash::from_uint(&U256::from(1)))
         .unwrap();
+    let mut state = State::new(StateDb::new(&mut storage)).unwrap();
 
     let mut params = ActionParams::default();
     params.address = contract_address;
@@ -938,7 +944,8 @@ fn test_deposit_withdraw_lock() {
 fn test_commission_privilege_all_whitelisted_across_epochs() {
     let code: Vec<u8> = "7c601080600c6000396000f3006000355415600957005b60203560003555600052601d60036017f0600055".from_hex().unwrap();
 
-    let mut state = get_state_for_genesis_write();
+    let mut storage = get_storage_for_genesis_write();
+    let mut state = State::new(StateDb::new(&mut storage)).unwrap();
     let machine = make_byzantium_machine(0);
     let mut env = Env::default();
     env.gas_limit = U256::MAX;
@@ -998,10 +1005,15 @@ fn test_commission_privilege_all_whitelisted_across_epochs() {
         .unwrap();
     state.discard_checkpoint();
     let mut debug_record = ComputeEpochDebugRecord::default();
-    state.commit(epoch_id, Some(&mut debug_record)).unwrap();
+    state
+        .apply_changes_to_storage(Some(&mut debug_record))
+        .unwrap();
+    drop(state);
+    storage.commit(epoch_id).unwrap();
     debug!("{:?}", debug_record);
 
-    let mut state = get_state_by_epoch_id(&epoch_id);
+    storage = InmemoryStorage::from_epoch_id(&epoch_id).unwrap();
+    let mut state = State::new(StateDb::new(&mut storage)).unwrap();
 
     state.checkpoint();
     let mut substate = Substate::new();
@@ -1089,7 +1101,10 @@ fn test_commission_privilege_all_whitelisted_across_epochs() {
         .unwrap()
         .unwrap();
     state.discard_checkpoint();
-    state.commit_for_test(epoch_id).unwrap();
+    state.apply_changes_to_storage(None).unwrap();
+    drop(state);
+    storage.commit(epoch_id).unwrap();
+    let state = State::new(StateDb::new(&mut storage)).unwrap();
 
     assert_eq!(
         true,

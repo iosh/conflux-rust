@@ -11,7 +11,7 @@ use cfx_statedb::{global_params::*, Result as DbResult};
 use cfx_types::{address_util::AddressUtil, Address, AddressSpaceUtil, U256};
 use cfx_vm_types::{self as vm, Spec};
 
-impl State {
+impl State<'_> {
     pub fn collateral_for_storage(&self, address: &Address) -> DbResult<U256> {
         let acc = try_loaded!(self.read_native_account_lock(address));
         Ok(acc.collateral_for_storage())
@@ -111,7 +111,7 @@ impl State {
     }
 }
 
-impl State {
+impl State<'_> {
     // TODO: This function can only be called after VM execution. There are some
     // test cases breaks this assumption, which will be fixed in a separated PR.
     #[cfg(test)]
