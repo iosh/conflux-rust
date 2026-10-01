@@ -38,6 +38,7 @@ impl<'a> InternalRefContext<'a> {
         }
 
         let address = params.address;
+        self.tracer.log(&address, &topics, &data);
         self.substate.logs.push(LogEntry {
             address,
             topics,
