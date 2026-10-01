@@ -9,6 +9,9 @@ type DeltaMptId = u16;
 
 #[derive(Debug, Error)]
 pub enum Error {
+    #[error("external state backend failed: {0}")]
+    External(#[source] Box<dyn std::error::Error + Send + Sync>),
+
     #[error(transparent)]
     Account(#[from] AccountError),
 
