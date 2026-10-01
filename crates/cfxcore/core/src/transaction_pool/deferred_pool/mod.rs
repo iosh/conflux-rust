@@ -3,7 +3,7 @@ use super::{
     pool_metrics::pool_inner_metrics::*,
 };
 
-use crate::verification::PackingCheckResult;
+use cfx_executor::verification::PackingCheckResult;
 use cfx_packing_pool::{PackingPool, PackingPoolConfig};
 
 use cfx_rpc_cfx_types::PendingReason;

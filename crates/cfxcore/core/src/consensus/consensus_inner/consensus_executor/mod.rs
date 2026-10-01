@@ -52,10 +52,7 @@ use crate::{
         ConsensusGraphInner,
     },
     errors::{invalid_params_check, Result as CoreResult},
-    verification::{
-        compute_receipts_root, VerificationConfig, VerifyTxLocalMode,
-        VerifyTxMode,
-    },
+    verification::{compute_receipts_root, VerificationConfig},
     SharedTransactionPool,
 };
 use cfx_execute_helper::estimation::{
@@ -67,6 +64,7 @@ use cfx_executor::{
     state::{
         distribute_pos_interest, update_pos_status, State, StateCommitResult,
     },
+    verification::{VerifyTxLocalMode, VerifyTxMode},
 };
 use cfx_vm_types::{Env, Spec};
 use geth_tracer::GethTraceWithHash;
@@ -1614,13 +1612,15 @@ impl ConsensusExecutionHandler {
 
         invalid_params_check(
             "tx",
-            self.verification_config.verify_transaction_common(
-                tx,
-                AllChainID::fake_for_virtual(tx.chain_id().unwrap_or(1)),
-                block_height,
-                transitions,
-                VerifyTxMode::Local(VerifyTxLocalMode::Full, &spec),
-            ),
+            self.verification_config
+                .transaction
+                .verify_transaction_common(
+                    tx,
+                    AllChainID::fake_for_virtual(tx.chain_id().unwrap_or(1)),
+                    block_height,
+                    transitions,
+                    VerifyTxMode::Local(VerifyTxLocalMode::Full, &spec),
+                ),
         )?;
 
         let state_space = match tx.space() {
@@ -1663,6 +1663,7 @@ impl ConsensusExecutionHandler {
             finalized_epoch: pivot_decision_epoch,
             transaction_epoch_bound: self
                 .verification_config
+                .transaction
                 .transaction_epoch_bound,
             base_gas_price,
             burnt_gas_price,

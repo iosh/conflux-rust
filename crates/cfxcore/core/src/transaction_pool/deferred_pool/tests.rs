@@ -1,10 +1,8 @@
 use crate::transaction_pool::TransactionPoolError;
 
 use super::{DeferredPool, InsertResult, TxWithReadyInfo};
-use crate::{
-    keylib::{Generator, KeyPair, Random},
-    verification::PackingCheckResult,
-};
+use crate::keylib::{Generator, KeyPair, Random};
+use cfx_executor::verification::PackingCheckResult;
 use cfx_types::{Address, AddressSpaceUtil, AddressWithSpace, Space, U256};
 use cfxkey::Secret;
 use primitives::{

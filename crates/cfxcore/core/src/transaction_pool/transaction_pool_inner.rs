@@ -7,8 +7,8 @@ use super::{
     TransactionPoolError,
 };
 
-use crate::verification::{PackingCheckResult, VerificationConfig};
-use cfx_executor::machine::Machine;
+use crate::verification::VerificationConfig;
+use cfx_executor::{machine::Machine, verification::PackingCheckResult};
 use cfx_packing_pool::PackingPoolConfig;
 use cfx_parameters::{
     block::cspace_block_gas_limit_after_cip1559,
@@ -694,7 +694,7 @@ impl TransactionPoolInner {
         let transitions = &machine.params().transition_heights;
 
         let validity = |tx: &SignedTransaction| {
-            verification_config.fast_recheck(
+            verification_config.transaction.fast_recheck(
                 tx,
                 best_epoch_height,
                 transitions,
@@ -1160,7 +1160,7 @@ impl TransactionPoolInner {
 
 #[cfg(test)]
 mod tests {
-    use crate::verification::PackingCheckResult;
+    use cfx_executor::verification::PackingCheckResult;
 
     use super::TransactionPoolInner;
     use crate::keylib::{Generator, KeyPair, Random};

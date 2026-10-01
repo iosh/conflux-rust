@@ -16,10 +16,13 @@ use crate::{
     block_data_manager::BlockDataManager,
     consensus::BestInformation,
     transaction_pool::{nonce_pool::TxWithReadyInfo, pool_metrics::*},
-    verification::{VerificationConfig, VerifyTxLocalMode, VerifyTxMode},
+    verification::VerificationConfig,
 };
 use cfx_executor::{
-    machine::Machine, spec::TransitionsEpochHeight, state::State,
+    machine::Machine,
+    spec::TransitionsEpochHeight,
+    state::State,
+    verification::{TransactionVerifier, VerifyTxLocalMode, VerifyTxMode},
 };
 use cfx_parameters::{
     block::{
@@ -309,10 +312,10 @@ impl TransactionPool {
         };
 
         if let Transaction::Native(tx) = &first_tx.unsigned {
-            if VerificationConfig::check_transaction_epoch_bound(
+            if TransactionVerifier::check_transaction_epoch_bound(
                 tx,
                 best_height,
-                self.verification_config.transaction_epoch_bound,
+                self.verification_config.transaction.transaction_epoch_bound,
             ) == -1
             {
                 // If the epoch height is out of bound, overwrite the
@@ -627,13 +630,17 @@ impl TransactionPool {
             self.verification_config
                 .check_tx_size(transaction)
                 .map_err(|e| TransactionPoolError::TransactionError(e))?;
-            if let Err(e) = self.verification_config.verify_transaction_common(
-                transaction,
-                chain_id,
-                best_height,
-                transitions,
-                mode,
-            ) {
+            if let Err(e) = self
+                .verification_config
+                .transaction
+                .verify_transaction_common(
+                    transaction,
+                    chain_id,
+                    best_height,
+                    transitions,
+                    mode,
+                )
+            {
                 warn!("Transaction {:?} discarded due to not passing basic verification.", transaction.hash());
                 return Err(TransactionPoolError::TransactionError(e));
             }
@@ -763,7 +770,7 @@ impl TransactionPool {
         let transitions = &self.machine.params().transition_heights;
 
         let validity = |tx: &SignedTransaction| {
-            self.verification_config.fast_recheck(
+            self.verification_config.transaction.fast_recheck(
                 tx,
                 best_epoch_height,
                 transitions,

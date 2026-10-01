@@ -59,6 +59,9 @@ pub mod spec;
 /// meaningful database interfaces for the execution.
 pub mod state;
 
+/// Shared transaction admission checks for nodes and local execution.
+pub mod verification;
+
 pub use internal_contract::{InternalContractMap, InternalContractTrait};
 pub use observer as executive_observer;
 

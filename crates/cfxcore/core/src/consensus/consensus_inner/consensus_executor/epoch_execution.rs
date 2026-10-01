@@ -261,6 +261,7 @@ impl ConsensusExecutionHandler {
             finalized_epoch: pivot_decision_epoch,
             transaction_epoch_bound: self
                 .verification_config
+                .transaction
                 .transaction_epoch_bound,
             base_gas_price,
             burnt_gas_price,
