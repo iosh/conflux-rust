@@ -21,6 +21,17 @@ use super::OverlayAccount;
 use super::super::checkpoints::CheckpointEntry;
 
 impl OverlayAccount {
+    /// Keys written to this account since its last backing-store commit.
+    /// Call after `State::update_state_post_tx_execution` so that writes from
+    /// reverted frames have already been discarded.
+    pub fn modified_storage_keys(&self) -> Vec<Vec<u8>> {
+        self.storage_committed_cache
+            .read()
+            .keys()
+            .cloned()
+            .collect()
+    }
+
     pub fn set_storage(
         &mut self, key: Vec<u8>, value: U256, old_value: StorageValue,
         owner: Address, substate: &mut Substate,
