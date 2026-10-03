@@ -34,6 +34,12 @@ pub enum ChargeCollateral {
     /// Estimate collateral which would be charged to the sponsor.
     /// This mode does not actually charge the sponsor.
     EstimateSponsor,
+    /// Skip transaction collateral charges, refunds and storage-limit checks.
+    /// Internal contract calls still execute against the supplied state.
+    /// The storage fields in `Executed` are empty/false in this mode; they do
+    /// not describe actual collateral changes or prove that the transaction
+    /// can pay for storage. Intended for non-persistent simulation only.
+    Skip,
 }
 
 impl TransactSettings {

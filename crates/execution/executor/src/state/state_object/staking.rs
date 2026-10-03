@@ -77,6 +77,26 @@ impl State {
         Ok(())
     }
 
+    pub fn deposit_list(
+        &self, address: &Address,
+    ) -> DbResult<primitives::DepositList> {
+        let acc = try_loaded!(self.read_account_ext_lock(
+            &address.with_native_space(),
+            RequireFields::DepositList
+        ));
+        Ok(acc.deposit_list().clone())
+    }
+
+    pub fn vote_stake_list(
+        &self, address: &Address,
+    ) -> DbResult<primitives::VoteStakeList> {
+        let acc = try_loaded!(self.read_account_ext_lock(
+            &address.with_native_space(),
+            RequireFields::VoteStakeList
+        ));
+        Ok(acc.vote_stake_list().clone())
+    }
+
     pub fn deposit_list_length(&self, address: &Address) -> DbResult<usize> {
         let acc = try_loaded!(self.read_account_ext_lock(
             &address.with_native_space(),

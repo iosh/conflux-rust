@@ -363,8 +363,12 @@ impl<'a, O: ExecutiveObserver> FreshExecutive<'a, O> {
                     gas_sponsor_eligible = gas_cost
                         + additional_gas_required_1559
                         <= U512::from(state.sponsor_gas_bound(&code_address)?);
-                    storage_sponsor_eligible =
-                        state.sponsor_for_collateral(&code_address)?.is_some();
+                    storage_sponsor_eligible = !matches!(
+                        settings.charge_collateral,
+                        ChargeCollateral::Skip
+                    ) && state
+                        .sponsor_for_collateral(&code_address)?
+                        .is_some();
                 }
             }
         }
@@ -379,15 +383,21 @@ impl<'a, O: ExecutiveObserver> FreshExecutive<'a, O> {
         let gas_sponsored =
             gas_sponsor_eligible && sponsor_balance_for_gas >= gas_cost;
 
-        let sponsor_balance_for_storage = state
-            .sponsor_balance_for_collateral(&code_address)?
-            + state.available_storage_points_for_collateral(&code_address)?;
+        let sponsor_balance_for_storage =
+            if matches!(settings.charge_collateral, ChargeCollateral::Skip) {
+                U256::zero()
+            } else {
+                state.sponsor_balance_for_collateral(&code_address)?
+                    + state.available_storage_points_for_collateral(
+                        &code_address,
+                    )?
+            };
         let storage_sponsored = match settings.charge_collateral {
             ChargeCollateral::Normal => {
                 storage_sponsor_eligible
                     && storage_cost <= sponsor_balance_for_storage
             }
-            ChargeCollateral::EstimateSender => false,
+            ChargeCollateral::EstimateSender | ChargeCollateral::Skip => false,
             ChargeCollateral::EstimateSponsor => true,
         };
 

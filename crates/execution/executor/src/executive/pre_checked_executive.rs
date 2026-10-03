@@ -293,23 +293,29 @@ pub(super) fn exec_vm<'a>(
 
 impl<'a, O: ExecutiveObserver> PreCheckedExecutive<'a, O> {
     fn exec_vm(&mut self, params: ActionParams) -> DbResult<ExecutiveResult> {
-        // No matter who pays the collateral, we only focuses on the storage
-        // limit of sender.
-        let total_storage_limit =
-            self.context.state.collateral_for_storage(&params.sender)?
-                + self.cost.storage_cost;
+        // Capture the sender's pre-execution collateral when settlement is
+        // enabled, regardless of who pays for new storage.
+        let total_storage_limit = match self.settings.charge_collateral {
+            ChargeCollateral::Skip => None,
+            _ => Some(
+                self.context.state.collateral_for_storage(&params.sender)?
+                    + self.cost.storage_cost,
+            ),
+        };
 
         // Initialize the checkpoint for transaction execution. This checkpoint
         // can be reverted by "not enough balance for storage".
         self.context.state.checkpoint();
         self.observer.as_tracer().trace_checkpoint();
 
-        let res = exec_vm(
+        let mut res = exec_vm(
             &mut self.context,
             params.clone(),
             &mut *self.observer.as_tracer(),
         )?;
-        let mut res = self.settle_collateral(res, total_storage_limit)?;
+        if let Some(limit) = total_storage_limit {
+            res = self.settle_collateral(res, limit)?;
+        }
 
         // Charge collateral and process the checkpoint.
         match &res {
@@ -385,41 +391,43 @@ impl<'a, O: ExecutiveObserver> PreCheckedExecutive<'a, O> {
         assert!(state.no_checkpoint());
 
         let mut substate = Substate::new();
-        for address in parent_substate
-            .suicides
-            .iter()
-            .filter(|x| x.space == Space::Native)
-        {
-            let code_size = state.code_size(address)?;
-            if code_size > 0 {
-                // Only refund the code collateral when code exists.
-                // If a contract suicides during creation, the code will be
-                // empty.
-                let code_owner = state.code_owner(address)?;
-                substate.record_storage_release(
-                    &code_owner,
-                    code_collateral_units(code_size),
-                );
+        if !matches!(self.settings.charge_collateral, ChargeCollateral::Skip) {
+            for address in parent_substate
+                .suicides
+                .iter()
+                .filter(|x| x.space == Space::Native)
+            {
+                let code_size = state.code_size(address)?;
+                if code_size > 0 {
+                    // Only refund the code collateral when code exists.
+                    // If a contract suicides during creation, the code will be
+                    // empty.
+                    let code_owner = state.code_owner(address)?;
+                    substate.record_storage_release(
+                        &code_owner,
+                        code_collateral_units(code_size),
+                    );
+                }
+                state.record_storage_and_whitelist_entries_release(
+                    &address.address,
+                    &mut substate,
+                    spec.cip131,
+                )?;
+
+                assert!(state.is_fresh_storage(address)?);
             }
-            state.record_storage_and_whitelist_entries_release(
-                &address.address,
-                &mut substate,
-                spec.cip131,
-            )?;
 
-            assert!(state.is_fresh_storage(address)?);
+            // Kill process does not occupy new storage entries.
+            // The storage recycling process should never occupy new collateral.
+            settle_collateral_for_all(
+                state,
+                &substate,
+                &mut *tracer,
+                &spec,
+                false,
+            )?
+            .expect("Should success");
         }
-
-        // Kill process does not occupy new storage entries.
-        // The storage recycling process should never occupy new collateral.
-        settle_collateral_for_all(
-            state,
-            &substate,
-            &mut *tracer,
-            &spec,
-            false,
-        )?
-        .expect("Should success");
 
         for contract_address in parent_substate
             .suicides
@@ -649,7 +657,13 @@ impl<'a, O: ExecutiveObserver> PreCheckedExecutive<'a, O> {
         let cost = self.cost;
         let ext_result = make_ext_result(self.observer);
         let spec = self.context.spec;
-        let tx_substate = self.substate;
+        let mut tx_substate = self.substate;
+        if matches!(self.settings.charge_collateral, ChargeCollateral::Skip) {
+            // These counters contain ownership assumptions from simulation
+            // input. Do not return them as measured collateral changes.
+            tx_substate.storage_collateralized.clear();
+            tx_substate.storage_released.clear();
+        }
 
         let outcome = match result {
             Err(vm::Error::StateDbError(e)) => bail!(e.0),
