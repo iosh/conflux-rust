@@ -3,9 +3,9 @@
 // See http://www.gnu.org/licenses/
 
 use crate::{
+    execution_state::ExecutionState,
     executive_observer::{AddressPocket, TracerTrait},
     stack::CallStackInfo,
-    state::State,
     substate::Substate,
 };
 use cfx_vm_types::{self as vm, ActionParams, Spec};
@@ -31,8 +31,8 @@ fn available_admin_address(_spec: &Spec, address: &Address) -> bool {
 ///   4. kill the contract
 pub fn suicide(
     contract_address: &AddressWithSpace, refund_address: &AddressWithSpace,
-    state: &mut State, spec: &Spec, substate: &mut Substate, env: &Env,
-    creating_contract: bool, tracer: &mut dyn TracerTrait,
+    state: &mut dyn ExecutionState, spec: &Spec, substate: &mut Substate,
+    env: &Env, creating_contract: bool, tracer: &mut dyn TracerTrait,
 ) -> vm::Result<()> {
     // After CIP-151, contract can only be killed in the same transaction as
     // its creation.
@@ -123,9 +123,9 @@ pub fn set_admin(
 /// Implementation of `destroy(address)`.
 /// The input should consist of 20 bytes `contract_address`
 pub fn destroy(
-    contract_address: Address, params: &ActionParams, state: &mut State,
-    spec: &Spec, substate: &mut Substate, env: &Env,
-    tracer: &mut dyn TracerTrait, callstack: &CallStackInfo,
+    contract_address: Address, params: &ActionParams,
+    state: &mut dyn ExecutionState, spec: &Spec, substate: &mut Substate,
+    env: &Env, tracer: &mut dyn TracerTrait, callstack: &CallStackInfo,
 ) -> vm::Result<()> {
     debug!("contract_address={:?}", contract_address);
 

@@ -3,9 +3,9 @@
 // See http://www.gnu.org/licenses/
 
 use crate::{
+    execution_state::ExecutionState,
     executive_observer::{AddressPocket, TracerTrait},
     internal_bail,
-    state::State,
 };
 use cfx_parameters::{
     consensus::ONE_CFX_IN_DRIP,
@@ -17,7 +17,7 @@ use cfx_vm_types::{self as vm, ActionParams, Env, Spec};
 /// Implementation of `deposit(uint256)`.
 pub fn deposit(
     amount: U256, params: &ActionParams, env: &Env, spec: &Spec,
-    state: &mut State, tracer: &mut dyn TracerTrait,
+    state: &mut dyn ExecutionState, tracer: &mut dyn TracerTrait,
 ) -> vm::Result<()> {
     if amount < U256::from(ONE_CFX_IN_DRIP) {
         internal_bail!("invalid deposit amount");
@@ -39,7 +39,7 @@ pub fn deposit(
 /// Implementation of `withdraw(uint256)`.
 pub fn withdraw(
     amount: U256, params: &ActionParams, env: &Env, spec: &Spec,
-    state: &mut State, tracer: &mut dyn TracerTrait,
+    state: &mut dyn ExecutionState, tracer: &mut dyn TracerTrait,
 ) -> vm::Result<()> {
     state.remove_expired_vote_stake_info(&params.sender, env.number)?;
     if state.withdrawable_staking_balance(&params.sender, env.number)? < amount
@@ -71,7 +71,7 @@ pub fn withdraw(
 /// Implementation of `getVoteLocked(address,uint)`.
 pub fn vote_lock(
     amount: U256, unlock_block_number: U256, params: &ActionParams, env: &Env,
-    state: &mut State,
+    state: &mut dyn ExecutionState,
 ) -> vm::Result<()> {
     let unlock_block_number = unlock_block_number.low_u64();
     if unlock_block_number <= env.number {
@@ -89,7 +89,7 @@ pub fn vote_lock(
 /// Implementation of `getLockedStakingBalance(address,uint)`.
 pub fn get_locked_staking(
     address: Address, block_number: U256, current_block_number: u64,
-    state: &mut State,
+    state: &mut dyn ExecutionState,
 ) -> vm::Result<U256> {
     let mut block_number = block_number.low_u64();
     if block_number < current_block_number {
@@ -101,7 +101,7 @@ pub fn get_locked_staking(
 /// Implementation of `getVotePower(address,uint)`.
 pub fn get_vote_power(
     address: Address, block_number: U256, current_block_number: u64,
-    state: &mut State,
+    state: &mut dyn ExecutionState,
 ) -> vm::Result<U256> {
     let mut block_number = block_number.low_u64();
     if block_number < current_block_number {

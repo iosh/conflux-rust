@@ -1,6 +1,6 @@
 use crate::{
-    executive_observer::TracerTrait, stack::CallStackInfo, state::State,
-    substate::Substate,
+    execution_state::ExecutionState, executive_observer::TracerTrait,
+    stack::CallStackInfo, substate::Substate,
 };
 use cfx_statedb::Result as DbResult;
 use cfx_types::{
@@ -16,7 +16,7 @@ pub struct InternalRefContext<'a> {
     pub env: &'a Env,
     pub spec: &'a Spec,
     pub callstack: &'a mut CallStackInfo,
-    pub state: &'a mut State,
+    pub state: &'a mut dyn ExecutionState,
     pub substate: &'a mut Substate,
     pub tracer: &'a mut dyn TracerTrait,
     pub static_flag: bool,

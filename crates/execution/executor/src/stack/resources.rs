@@ -1,12 +1,13 @@
 use crate::{
-    executive_observer::TracerTrait, stack::CallStackInfo, state::State,
+    execution_state::ExecutionState, executive_observer::TracerTrait,
+    stack::CallStackInfo,
 };
 
 /// The global resources and utilities shared across all frames.
 pub struct RuntimeRes<'a> {
     /// The ledger state including information such as the balance of each
     /// account.
-    pub state: &'a mut State,
+    pub state: &'a mut dyn ExecutionState,
 
     /// Metadata about the frame call stack.
     pub callstack: &'a mut CallStackInfo,
@@ -22,7 +23,7 @@ pub mod runtime_res_test {
     use super::RuntimeRes;
     use crate::stack::CallStackInfo;
 
-    use super::State;
+    use crate::state::State;
 
     pub struct OwnedRuntimeRes<'a> {
         state: &'a mut State,
@@ -43,7 +44,7 @@ pub mod runtime_res_test {
     impl<'a> OwnedRuntimeRes<'a> {
         pub fn as_res<'b>(&'b mut self) -> RuntimeRes<'b> {
             RuntimeRes {
-                state: &mut self.state,
+                state: &mut *self.state,
                 callstack: &mut self.callstack,
                 tracer: &mut self.tracer,
             }

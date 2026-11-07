@@ -12,10 +12,8 @@ use crate::{
         accrue_substate, exec_main_frame, CallStackInfo, FrameResult,
         FrameReturn, FreshFrame, RuntimeRes,
     },
-    state::settle_collateral_for_all,
     substate::Substate,
 };
-use cfx_parameters::staking::code_collateral_units;
 use cfx_vm_types::{
     self as vm, ActionParams, ActionValue, CallType, CreateType,
 };
@@ -284,7 +282,7 @@ pub(super) fn exec_vm<'a>(
     );
     let mut callstack = CallStackInfo::new();
     let resources = RuntimeRes {
-        state: &mut context.state,
+        state: &mut *context.state,
         callstack: &mut callstack,
         tracer: &mut *tracer,
     };
@@ -350,8 +348,7 @@ impl<'a, O: ExecutiveObserver> PreCheckedExecutive<'a, O> {
             );
 
             // For a ethereum space tx, this function has no op.
-            let mut collateral_check_result = settle_collateral_for_all(
-                state,
+            let mut collateral_check_result = state.settle_collateral_for_all(
                 substate,
                 &mut *self.observer.as_tracer(),
                 &context.spec,
@@ -390,36 +387,18 @@ impl<'a, O: ExecutiveObserver> PreCheckedExecutive<'a, O> {
             .iter()
             .filter(|x| x.space == Space::Native)
         {
-            let code_size = state.code_size(address)?;
-            if code_size > 0 {
-                // Only refund the code collateral when code exists.
-                // If a contract suicides during creation, the code will be
-                // empty.
-                let code_owner = state.code_owner(address)?;
-                substate.record_storage_release(
-                    &code_owner,
-                    code_collateral_units(code_size),
-                );
-            }
-            state.record_storage_and_whitelist_entries_release(
-                &address.address,
+            state.record_contract_collateral_release(
+                address,
                 &mut substate,
                 spec.cip131,
             )?;
-
-            assert!(state.is_fresh_storage(address)?);
         }
 
         // Kill process does not occupy new storage entries.
         // The storage recycling process should never occupy new collateral.
-        settle_collateral_for_all(
-            state,
-            &substate,
-            &mut *tracer,
-            &spec,
-            false,
-        )?
-        .expect("Should success");
+        state
+            .settle_collateral_for_all(&substate, &mut *tracer, &spec, false)?
+            .expect("Should success");
 
         for contract_address in parent_substate
             .suicides
@@ -567,7 +546,7 @@ impl<'a, O: ExecutiveObserver> PreCheckedExecutive<'a, O> {
     ) -> DbResult<()> {
         let context = &mut self.context;
         let cost = &self.cost;
-        let state = &mut context.state;
+        let state = &mut *context.state;
         let mut tracer = self.observer.as_tracer();
 
         if cost.gas_sponsored {

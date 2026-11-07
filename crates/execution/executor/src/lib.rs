@@ -25,6 +25,9 @@ pub mod context;
 /// the Conflux specification, and submitting them to the execution engine.
 pub mod executive;
 
+/// Replaceable state operations for execution.
+pub mod execution_state;
+
 /// Protocol state transitions that run before epoch and block transactions.
 pub mod epoch_execution;
 

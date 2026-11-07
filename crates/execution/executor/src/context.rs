@@ -4,6 +4,7 @@
 
 // Transaction execution environment.
 use crate::{
+    execution_state::ExecutionState,
     executive_observer::TracerTrait,
     internal_contract::{
         block_hash_slot, epoch_hash_slot, suicide as suicide_impl,
@@ -12,7 +13,6 @@ use crate::{
     machine::Machine,
     return_if,
     stack::{CallStackInfo, FrameLocal, RuntimeRes},
-    state::State,
     substate::Substate,
 };
 use cfx_bytes::Bytes;
@@ -73,7 +73,7 @@ pub struct Context<'a> {
     spec: &'a Spec,
     static_flag: bool,
 
-    state: &'a mut State,
+    state: &'a mut dyn ExecutionState,
     callstack: &'a mut CallStackInfo,
     tracer: &'a mut dyn TracerTrait,
 }

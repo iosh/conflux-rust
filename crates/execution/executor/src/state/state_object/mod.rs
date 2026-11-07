@@ -51,7 +51,10 @@ mod state_override;
 mod tests;
 
 pub use self::{
-    collateral::{initialize_cip107, settle_collateral_for_all},
+    collateral::{
+        initialize_cip107, settle_collateral_for_all, CollateralCheckError,
+        CollateralCheckResult,
+    },
     commit::StateCommitResult,
     pos::{distribute_pos_interest, update_pos_status},
     reward::initialize_cip137,

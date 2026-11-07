@@ -5,14 +5,11 @@ use cfx_types::U256;
 use primitives::{Block, BlockNumber};
 
 use crate::{
+    execution_state::ExecutionState,
     internal_contract::{
         block_hash_slot, epoch_hash_slot, initialize_internal_contract_accounts,
     },
     machine::Machine,
-    state::{
-        initialize_cip107, initialize_cip137,
-        initialize_or_update_dao_voted_params, State,
-    },
 };
 
 /// Applies the protocol state changes that precede transaction execution in an
@@ -22,7 +19,7 @@ use crate::{
 ///
 /// Returns a state database error when a required system-state write fails.
 pub fn before_epoch_execution(
-    state: &mut State, machine: &Machine, pivot_block: &Block,
+    state: &mut dyn ExecutionState, machine: &Machine, pivot_block: &Block,
 ) -> DbResult<()> {
     let params = machine.params();
 
@@ -51,8 +48,8 @@ pub fn before_epoch_execution(
 ///
 /// Returns a state database error when a required state transition fails.
 pub fn before_block_execution(
-    state: &mut State, machine: &Machine, block_number: BlockNumber,
-    block: &Block,
+    state: &mut dyn ExecutionState, machine: &Machine,
+    block_number: BlockNumber, block: &Block,
 ) -> DbResult<U256> {
     let params = machine.params();
     let transition_numbers = &params.transition_numbers;
@@ -63,7 +60,7 @@ pub fn before_block_execution(
     if block_number >= cip94_start && (block_number - cip94_start) % period == 0
     {
         let set_pos_staking = block_number > transition_numbers.cip105;
-        initialize_or_update_dao_voted_params(state, set_pos_staking)?;
+        state.initialize_or_update_dao_voted_params(set_pos_staking)?;
     }
 
     // Initialize old_storage_point_prop_ratio in the state.
@@ -71,7 +68,7 @@ pub fn before_block_execution(
     // integrated with initialize_or_update_dao_voted_params, but that
     // function will update the value after cip107 is enabled here.
     if block_number == transition_numbers.cip107 {
-        initialize_cip107(state)?;
+        state.initialize_cip107_globals()?;
     }
 
     if block_number >= transition_numbers.cip133b {
@@ -82,7 +79,7 @@ pub fn before_block_execution(
     }
 
     if block_number == transition_numbers.cip137 {
-        initialize_cip137(state);
+        state.initialize_cip137_globals();
     }
 
     if block_number < transition_numbers.cip43a {

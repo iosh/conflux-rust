@@ -27,12 +27,13 @@ pub use transact_options::{
 };
 
 use crate::{
-    executive_observer::ExecutiveObserver, machine::Machine, state::State,
+    execution_state::ExecutionState, executive_observer::ExecutiveObserver,
+    machine::Machine,
 };
 
 /// Transaction executor.
 pub struct ExecutiveContext<'a> {
-    state: &'a mut State,
+    state: &'a mut dyn ExecutionState,
     env: &'a Env,
     machine: &'a Machine,
     spec: &'a Spec,
@@ -40,7 +41,7 @@ pub struct ExecutiveContext<'a> {
 
 impl<'a> ExecutiveContext<'a> {
     pub fn new(
-        state: &'a mut State, env: &'a Env, machine: &'a Machine,
+        state: &'a mut dyn ExecutionState, env: &'a Env, machine: &'a Machine,
         spec: &'a Spec,
     ) -> Self {
         ExecutiveContext {
@@ -56,9 +57,17 @@ impl<'a> ExecutiveContext<'a> {
         self, tx: &SignedTransaction, options: TransactOptions<O>,
     ) -> DbResult<ExecutionOutcome> {
         // Transaction should execute on an empty cache
-        assert!(self.state.cache.get_mut().is_empty());
+        self.state.assert_transaction_ready();
 
-        let fresh_exec = FreshExecutive::new(self, tx, options);
+        // The mutable trait object makes the context invariant. Reborrow its
+        // resources so the transaction need only live for this call.
+        let context = ExecutiveContext::new(
+            self.state,
+            self.env,
+            self.machine,
+            self.spec,
+        );
+        let fresh_exec = FreshExecutive::new(context, tx, options);
 
         Ok(match fresh_exec.check_all()? {
             Ok(executive) => executive.execute_transaction()?,

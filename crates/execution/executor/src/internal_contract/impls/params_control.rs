@@ -16,7 +16,7 @@ use super::super::{
     contracts::params_control::*,
     impls::staking::get_vote_power,
 };
-use crate::{internal_bail, state::State};
+use crate::{execution_state::ExecutionState, internal_bail};
 
 use self::system_storage_key::{
     current_pos_staking_for_votes, settled_pos_staking_for_votes,
@@ -218,7 +218,7 @@ pub fn total_votes(
         / context.spec.params_dao_vote_period
         + 1;
 
-    let state = &context.state;
+    let state = &*context.state;
 
     let votes_entries =
         if version.checked_add(1) == Some(current_voting_version) {
@@ -263,7 +263,7 @@ pub fn pos_stake_for_votes(
         / context.spec.params_dao_vote_period
         + 1;
 
-    let state = &context.state;
+    let state = &*context.state;
     let pos_stake_entry =
         if version.checked_add(1) == Some(current_voting_version) {
             settled_pos_staking_for_votes()
@@ -321,7 +321,7 @@ impl ParamVoteCount {
     }
 
     pub fn from_state<U: AsRef<[u8]>>(
-        state: &State, slot_entry: &[U; 3],
+        state: &dyn ExecutionState, slot_entry: &[U; 3],
     ) -> DbResult<Self> {
         Ok(ParamVoteCount {
             unchange: state.get_system_storage(
@@ -408,7 +408,7 @@ pub struct AllParamsVoteCount {
 /// If the vote counts are not initialized, all counts will be zero, and the
 /// parameters will be unchanged.
 pub fn get_settled_param_vote_count(
-    state: &State,
+    state: &dyn ExecutionState,
 ) -> DbResult<AllParamsVoteCount> {
     let pow_base_reward = ParamVoteCount::from_state(
         state,
@@ -434,13 +434,17 @@ pub fn get_settled_param_vote_count(
     })
 }
 
-pub fn get_settled_pos_staking_for_votes(state: &State) -> DbResult<U256> {
+pub fn get_settled_pos_staking_for_votes(
+    state: &dyn ExecutionState,
+) -> DbResult<U256> {
     state.get_system_storage(&settled_pos_staking_for_votes())
 }
 
 /// Move the next vote counts into settled and reset the counts.
 /// `set_pos_staking` is for compatibility with the Testnet.
-pub fn settle_current_votes(state: &mut State, cip105: bool) -> DbResult<()> {
+pub fn settle_current_votes(
+    state: &mut dyn ExecutionState, cip105: bool,
+) -> DbResult<()> {
     // Here using `PARAMETER_INDEX_MAX` without knowing the block_number is okay
     // because if the new parameters have not been enabled, their votes will
     // be zero and setting them will be no-op.

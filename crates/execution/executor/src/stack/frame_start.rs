@@ -2,7 +2,9 @@ use super::{
     super::context::OriginInfo, executable::make_executable, run_executable,
     FrameLocal, FrameStackAction, RuntimeRes,
 };
-use crate::{machine::Machine, state::State, substate::Substate};
+use crate::{
+    execution_state::ExecutionState, machine::Machine, substate::Substate,
+};
 
 use cfx_statedb::Result as DbResult;
 use cfx_types::{Address, AddressSpaceUtil, AddressWithSpace, Space};
@@ -108,7 +110,9 @@ impl<'a> FreshFrame<'a> {
     }
 }
 
-fn transfer_balance(params: &ActionParams, state: &mut State) -> DbResult<()> {
+fn transfer_balance(
+    params: &ActionParams, state: &mut dyn ExecutionState,
+) -> DbResult<()> {
     let sender = AddressWithSpace {
         address: params.sender,
         space: params.space,
@@ -125,7 +129,7 @@ fn transfer_balance(params: &ActionParams, state: &mut State) -> DbResult<()> {
 }
 
 fn transfer_exec_balance_and_init_contract(
-    params: &ActionParams, spec: &Spec, state: &mut State,
+    params: &ActionParams, spec: &Spec, state: &mut dyn ExecutionState,
     storage_layout: Option<StorageLayout>,
 ) -> DbResult<()> {
     let sender = AddressWithSpace {

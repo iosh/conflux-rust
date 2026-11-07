@@ -63,13 +63,13 @@ pub fn all_internal_contracts() -> Vec<Box<dyn super::InternalContractTrait>> {
     ]
 }
 
-use crate::state::State;
+use crate::execution_state::ExecutionState;
 use cfx_statedb::Result as DbResult;
 use cfx_types::{Address, AddressSpaceUtil, U256};
 use primitives::storage::STORAGE_LAYOUT_REGULAR_V0;
 
 pub fn initialize_internal_contract_accounts(
-    state: &mut State, addresses: &[Address],
+    state: &mut dyn ExecutionState, addresses: &[Address],
 ) -> DbResult<()> {
     for address in addresses {
         state.new_contract_with_admin(
