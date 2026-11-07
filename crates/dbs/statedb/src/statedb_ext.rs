@@ -57,7 +57,7 @@ pub trait StateDbExt {
     fn is_initialized(&self) -> Result<bool>;
 }
 
-impl StateDbExt for StateDbGeneric {
+impl<S: crate::StateStorage> StateDbExt for StateDbGeneric<S> {
     fn get<T>(&self, key: StorageKeyWithSpace) -> Result<Option<T>>
     where T: ::rlp::Decodable {
         match self.get_raw(key) {

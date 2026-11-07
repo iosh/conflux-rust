@@ -11,6 +11,7 @@ pub mod global_params;
 #[cfg(feature = "testonly_code")]
 mod in_memory_storage;
 mod statedb_ext;
+mod storage;
 use cfx_types::H256;
 use primitives::StorageValue;
 
@@ -23,6 +24,7 @@ pub use self::{
     error::{Error, Result},
     impls::StateDb as StateDbGeneric,
     statedb_ext::StateDbExt,
+    storage::StateStorage,
 };
 pub use cfx_storage_types::access_mode;
 pub type StateDb = StateDbGeneric;
@@ -37,23 +39,20 @@ mod impls {
     // see `delete_all`
     type AccessedEntries = BTreeMap<Key, EntryValue>;
 
-    // Use generic type for better test-ability.
-    pub struct StateDb {
+    /// Buffered state access over owned or caller-borrowed storage.
+    /// The default backend retains the ordinary node storage contract.
+    pub struct StateDb<S = Box<dyn StorageStateTrait>> {
         /// Contains the original storage key values for all loaded and
         /// modified key values.
         accessed_entries: RwLock<AccessedEntries>,
 
-        /// The underlying storage, The storage is updated only upon fn
-        /// commit().
-        storage: Box<dyn StorageStateTrait>,
+        /// Buffered changes reach this backend only during writeback.
+        storage: S,
     }
 
-    impl StateDb {
+    impl StateDb<Box<dyn StorageStateTrait>> {
         pub fn new(storage: Box<dyn StorageStateTrait>) -> Self {
-            StateDb {
-                accessed_entries: Default::default(),
-                storage,
-            }
+            Self::with_storage(storage)
         }
 
         #[cfg(feature = "testonly_code")]
@@ -70,6 +69,18 @@ mod impls {
             Self::new(Box::new(
                 InmemoryStorage::from_epoch_id(epoch_id).unwrap(),
             ))
+        }
+    }
+
+    impl<S: StateStorage> StateDb<S> {
+        /// Wraps a read/write storage backend, including a caller-owned borrow.
+        /// Buffered changes reach the backend through
+        /// `apply_changes_to_storage`.
+        pub fn with_storage(storage: S) -> Self {
+            Self {
+                accessed_entries: Default::default(),
+                storage,
+            }
         }
 
         #[cfg(test)]
@@ -320,8 +331,7 @@ mod impls {
                 StorageLayout,
             >,
             accept_account_deletion: bool, address: &[u8], space: Space,
-            storage: &dyn StorageStateTrait,
-            accessed_entries: &AccessedEntries,
+            storage: &dyn StateStorage, accessed_entries: &AccessedEntries,
         ) -> Result<()> {
             if storage_layouts_to_rewrite
                 .contains_key(&(address.to_vec(), space))
@@ -397,7 +407,7 @@ mod impls {
             Ok(self.storage.set(key, value)?)
         }
 
-        fn apply_changes_to_storage(
+        pub fn apply_changes_to_storage(
             &mut self, mut debug_record: Option<&mut ComputeEpochDebugRecord>,
         ) -> Result<()> {
             let mut storage_layouts_to_rewrite = Default::default();
@@ -427,7 +437,7 @@ mod impls {
                             v.current_value.is_none(),
                             address_bytes,
                             storage_key.space,
-                            self.storage.as_ref(),
+                            &self.storage,
                             &accessed_entries,
                         )?;
                     }
@@ -442,7 +452,7 @@ mod impls {
                             /* accept_account_deletion = */ false,
                             address_bytes,
                             storage_key.space,
-                            self.storage.as_ref(),
+                            &self.storage,
                             &accessed_entries,
                         );
                         if result.is_err() {
@@ -461,7 +471,7 @@ mod impls {
                             /* accept_account_deletion = */ false,
                             address_bytes,
                             storage_key.space,
-                            self.storage.as_ref(),
+                            &self.storage,
                             &accessed_entries,
                         )?;
                     }
@@ -482,7 +492,9 @@ mod impls {
             self.accessed_entries = Default::default();
             Ok(())
         }
+    }
 
+    impl StateDb<Box<dyn StorageStateTrait>> {
         /// This method is only used for genesis block because state root is
         /// required to compute genesis epoch_id. For other blocks there are
         /// deferred execution so the state root computation is merged inside
